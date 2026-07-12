@@ -111,7 +111,7 @@ parse_args() {
 
 validate_environment() {
     if ((EUID != 0)) && [[ ${SETUP_TEST_MODE:-0} != 1 ]]; then
-        die 'run as root (for example: sudo bash setup.sh)'
+        die 'run this setup from a root shell'
     fi
 
     local os_release id

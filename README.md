@@ -34,14 +34,14 @@ Review-first workflow:
 ```sh
 curl -fsSLo /tmp/tob-lxc-setup.sh https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh
 less /tmp/tob-lxc-setup.sh
-sudo bash /tmp/tob-lxc-setup.sh --github-user rogernolan
+bash /tmp/tob-lxc-setup.sh --github-user rogernolan
 rm -f /tmp/tob-lxc-setup.sh
 ```
 
 Convenience one-liner for a trusted homelab host:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh | sudo bash -s -- --github-user rogernolan
+curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh | bash -s -- --github-user rogernolan
 ```
 
 The one-liner executes the current `main` branch as root. Review changes to the repository before using it on a host where supply-chain review matters.
@@ -49,25 +49,25 @@ The one-liner executes the current `main` branch as root. Review changes to the 
 ## Local usage
 
 ```sh
-sudo ./setup.sh --github-user rogernolan
+./setup.sh --github-user rogernolan
 ```
 
 Use a local public-key file instead of GitHub:
 
 ```sh
-sudo ./setup.sh --ssh-public-key-file /path/to/rog.pub
+./setup.sh --ssh-public-key-file /path/to/rog.pub
 ```
 
 Create the account without configuring SSH keys:
 
 ```sh
-sudo ./setup.sh --no-ssh-key
+./setup.sh --no-ssh-key
 ```
 
 Show planned actions without changing the host:
 
 ```sh
-sudo ./setup.sh --dry-run --github-user rogernolan
+./setup.sh --dry-run --github-user rogernolan
 ```
 
 Options:
