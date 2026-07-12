@@ -57,6 +57,8 @@ The script will not silently create an SSH account with no usable key unless `--
 - `docs/superpowers/specs/...`: approved design documentation.
 - `docs/superpowers/plans/...`: implementation plan.
 
+When `setup.sh` is streamed from the documented raw GitHub URL, it will fetch the user guidance payload from the matching raw URL, validate its expected `AGENTS.md` heading, and install it without executing it. Local runs use the tracked payload directly.
+
 ## One-line installation
 
 After the public repository is available on GitHub, the documented command will be:
