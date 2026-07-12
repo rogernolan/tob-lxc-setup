@@ -350,8 +350,8 @@ main() {
     fi
     install_user_guidance
     manage_services
-    log 'ACTION REQUIRED: set a password for rog with: passwd rog'
     log 'LXC setup complete'
+    log 'ACTION REQUIRED: set a password for rog with: passwd rog'
 }
 
 main "$@"

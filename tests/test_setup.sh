@@ -179,6 +179,7 @@ test_setup_is_idempotent() {
     assert_contains 'npm install --global @openai/codex' "$FIXTURE/calls"
     assert_count 1 'usermod --append --groups sudo rog' "$FIXTURE/calls"
     assert_contains 'ACTION REQUIRED: set a password for rog with: passwd rog' "$FIXTURE/output"
+    [[ "$(tail -n 1 "$FIXTURE/output")" == 'INFO: ACTION REQUIRED: set a password for rog with: passwd rog' ]] || fail 'password reminder was not the final line'
     rm -rf "$FIXTURE"
 }
 
