@@ -38,6 +38,7 @@ NAME="Debian GNU/Linux"
 EOF
     : > "$ROOT/etc/passwd"
     printf 'sudo:x:27:\n' > "$ROOT/etc/group"
+    printf '# en_GB.UTF-8 UTF-8\n' > "$ROOT/etc/locale.gen"
     : > "$FIXTURE/calls"
 
     cat > "$BIN/apt-get" <<'EOF'
@@ -73,6 +74,10 @@ EOF
     cat > "$BIN/systemctl" <<'EOF'
 #!/usr/bin/env bash
 printf 'systemctl %s\n' "$*" >> "$TEST_CALLS"
+EOF
+    cat > "$BIN/locale-gen" <<'EOF'
+#!/usr/bin/env bash
+printf 'locale-gen %s\n' "$*" >> "$TEST_CALLS"
 EOF
     cat > "$BIN/chown" <<'EOF'
 #!/usr/bin/env bash
@@ -149,6 +154,8 @@ test_setup_is_idempotent() {
     assert_file_exists "$ROOT/home/rog/AGENTS.md"
     assert_contains 'practical homelab sysadmin assistant' "$ROOT/home/rog/AGENTS.md"
     assert_contains 'apt-get update' "$FIXTURE/calls"
+    assert_contains 'locale-gen en_GB.UTF-8' "$FIXTURE/calls"
+    assert_contains 'en_GB.UTF-8 UTF-8' "$ROOT/etc/locale.gen"
     assert_contains 'npm install --global @openai/codex' "$FIXTURE/calls"
     assert_count 1 'usermod --append --groups sudo rog' "$FIXTURE/calls"
     rm -rf "$FIXTURE"

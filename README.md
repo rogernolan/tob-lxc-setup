@@ -17,7 +17,7 @@ Unsupported distributions fail before package or configuration changes are made.
 
 The apt packages are:
 
-`ca-certificates`, `curl`, `git`, `jq`, `nodejs`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, and `avahi-daemon`.
+`ca-certificates`, `curl`, `git`, `jq`, `locales`, `nodejs`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, and `avahi-daemon`.
 
 The script also installs the OpenAI Codex CLI globally with npm:
 
@@ -86,6 +86,7 @@ Options:
 - Existing `/home/rog/AGENTS.md` is preserved. Existing user data and unrelated system configuration are not overwritten.
 - The script does not configure firewall rules, disable SSH password authentication, change hostnames, change timezones, or customize shells.
 - Package upgrades can restart services or change system behavior. Run the script during a suitable maintenance window.
+- `en_GB.UTF-8` is generated so SSH sessions that request that locale do not produce Bash warnings; existing `LANG` and locale policy are otherwise preserved.
 - Repeat runs are expected and should converge without duplicate users, group membership, SSH keys, or guidance files.
 
 ## Verification

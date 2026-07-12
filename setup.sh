@@ -141,6 +141,7 @@ install_packages() {
         curl
         git
         jq
+        locales
         nodejs
         npm
         openssh-client
@@ -156,6 +157,29 @@ install_packages() {
     run_env DEBIAN_FRONTEND=noninteractive apt-get -y upgrade
     log 'installing required packages'
     run_env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+}
+
+configure_locale() {
+    local locale_file temp_file
+    locale_file=$(root_path /etc/locale.gen)
+    [[ -f "$locale_file" ]] || {
+        log 'locale.gen is unavailable; skipping locale generation'
+        return
+    }
+    if ((DRY_RUN)); then
+        log 'would enable and generate en_GB.UTF-8'
+        return
+    fi
+    if grep -qE '^en_GB\.UTF-8[[:space:]]+UTF-8$' "$locale_file"; then
+        :
+    elif grep -qE '^#[[:space:]]*en_GB\.UTF-8[[:space:]]+UTF-8$' "$locale_file"; then
+        temp_file=$(mktemp "${locale_file}.XXXXXX")
+        awk '{ if ($0 ~ /^#[[:space:]]*en_GB\.UTF-8[[:space:]]+UTF-8$/) sub(/^#[[:space:]]*/, ""); print }' "$locale_file" > "$temp_file"
+        mv -- "$temp_file" "$locale_file"
+    else
+        printf 'en_GB.UTF-8 UTF-8\n' >> "$locale_file"
+    fi
+    locale-gen en_GB.UTF-8
 }
 
 install_codex() {
@@ -311,6 +335,7 @@ main() {
     parse_args "$@"
     validate_environment
     install_packages
+    configure_locale
     install_codex
     configure_user
     configure_sudo

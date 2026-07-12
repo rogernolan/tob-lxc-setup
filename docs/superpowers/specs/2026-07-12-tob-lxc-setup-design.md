@@ -20,7 +20,7 @@ The primary entry point is `setup.sh`. It will:
 1. Require Bash and root privileges.
 2. Detect and validate Debian or Ubuntu using `/etc/os-release`; fail before making changes on unsupported systems.
 3. Refresh package metadata and upgrade installed packages.
-4. Install Git, OpenSSH client/server, curl, jq, ripgrep, tmux, sudo, Avahi, Node.js/npm, and the Codex CLI. Package names and the current supported Codex installation method will be verified against current vendor documentation during implementation.
+4. Install Git, OpenSSH client/server, curl, jq, ripgrep, tmux, sudo, Avahi, `locales` with `en_GB.UTF-8` generated, Node.js/npm, and the Codex CLI. Package names and the current supported Codex installation method will be verified against current vendor documentation during implementation.
 5. Create `rog` if absent; preserve an existing account and home directory; add the user to the distro's administrative group (`sudo` on Debian/Ubuntu).
 6. Install a dedicated `/etc/sudoers.d/rog` entry with correct ownership and mode, validated with `visudo`. The entry grants administrative capability without modifying unrelated sudo policy.
 7. Obtain SSH public keys from `https://github.com/rogernolan.keys` by default, or from an explicitly supplied local public-key file. Validate supported OpenSSH public-key lines, install them idempotently in `/home/rog/.ssh/authorized_keys`, and apply restrictive ownership and permissions.
