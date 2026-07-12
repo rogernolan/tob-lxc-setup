@@ -142,8 +142,6 @@ install_packages() {
         git
         jq
         locales
-        nodejs
-        npm
         openssh-client
         openssh-server
         ripgrep
@@ -157,6 +155,10 @@ install_packages() {
     run_env DEBIAN_FRONTEND=noninteractive apt-get -y upgrade
     log 'installing required packages'
     run_env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    if ! command -v npm >/dev/null 2>&1; then
+        log 'installing npm'
+        run_env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends npm
+    fi
 }
 
 configure_locale() {

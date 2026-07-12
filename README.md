@@ -17,7 +17,9 @@ Unsupported distributions fail before package or configuration changes are made.
 
 The apt packages are:
 
-`ca-certificates`, `curl`, `git`, `jq`, `locales`, `nodejs`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, and `avahi-daemon`.
+`ca-certificates`, `curl`, `git`, `jq`, `locales`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, and `avahi-daemon`.
+
+If `npm` is not already available, the package manager installs it separately; its package dependencies provide a compatible Node.js runtime.
 
 The script also installs the OpenAI Codex CLI globally with npm:
 

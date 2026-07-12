@@ -21,6 +21,12 @@ assert_contains() {
     grep -Fq -- "$1" "$2" || fail "expected '$1' in $2"
 }
 
+assert_not_contains() {
+    if grep -Fq -- "$1" "$2"; then
+        fail "did not expect '$1' in $2"
+    fi
+}
+
 assert_count() {
     local expected=$1 pattern=$2 file=$3 actual
     actual=$(grep -Fc -- "$pattern" "$file" || true)
@@ -44,6 +50,18 @@ EOF
     cat > "$BIN/apt-get" <<'EOF'
 #!/usr/bin/env bash
 printf 'apt-get %s\n' "$*" >> "$TEST_CALLS"
+if [[ "$*" == 'install -y --no-install-recommends npm' ]]; then
+    cat > "$TEST_BIN/npm" <<'NPM'
+#!/usr/bin/env bash
+printf 'npm %s\n' "$*" >> "$TEST_CALLS"
+cat > "$TEST_BIN/codex" <<'CODEX'
+#!/usr/bin/env bash
+printf 'codex-cli test-version\n'
+CODEX
+chmod +x "$TEST_BIN/codex"
+NPM
+    chmod +x "$TEST_BIN/npm"
+fi
 EOF
     cat > "$BIN/npm" <<'EOF'
 #!/usr/bin/env bash
@@ -162,6 +180,8 @@ test_setup_is_idempotent() {
     assert_file_exists "$ROOT/home/rog/AGENTS.md"
     assert_contains 'practical homelab sysadmin assistant' "$ROOT/home/rog/AGENTS.md"
     assert_contains 'apt-get update' "$FIXTURE/calls"
+    assert_contains 'apt-get install -y --no-install-recommends ca-certificates curl git jq locales openssh-client' "$FIXTURE/calls"
+    assert_not_contains 'apt-get install -y --no-install-recommends ca-certificates curl git jq locales nodejs' "$FIXTURE/calls"
     assert_contains 'locale-gen en_GB.UTF-8' "$FIXTURE/calls"
     assert_contains 'en_GB.UTF-8 UTF-8' "$ROOT/etc/locale.gen"
     assert_contains 'npm install --global @openai/codex' "$FIXTURE/calls"
@@ -209,6 +229,15 @@ test_existing_user_password_is_preserved() {
     rm -rf "$FIXTURE"
 }
 
+test_installs_npm_separately_when_missing() {
+    make_fixture
+    rm -f "$BIN/npm"
+    TEST_EXPECTED_PASSWORD='fallback-secret' run_setup --no-ssh-key \
+        <<< $'fallback-secret\nfallback-secret\n'
+    assert_contains 'apt-get install -y --no-install-recommends npm' "$FIXTURE/calls"
+    rm -rf "$FIXTURE"
+}
+
 test_bootstrap_fetches_missing_payload() {
     make_fixture
     KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
@@ -229,5 +258,6 @@ test_new_user_gets_prompted_password
 test_rejects_mismatched_passwords
 test_rejects_empty_passwords
 test_existing_user_password_is_preserved
+test_installs_npm_separately_when_missing
 test_bootstrap_fetches_missing_payload
 printf 'PASS: setup tests\n'
