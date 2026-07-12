@@ -24,8 +24,9 @@ The primary entry point is `setup.sh`. It will:
 5. Create `rog` if absent; preserve an existing account and home directory; add the user to the distro's administrative group (`sudo` on Debian/Ubuntu).
 6. Install a dedicated `/etc/sudoers.d/rog` entry with correct ownership and mode, validated with `visudo`. The entry grants administrative capability without modifying unrelated sudo policy.
 7. Obtain SSH public keys from `https://github.com/rogernolan.keys` by default, or from an explicitly supplied local public-key file. Validate supported OpenSSH public-key lines, install them idempotently in `/home/rog/.ssh/authorized_keys`, and apply restrictive ownership and permissions.
-8. Enable and start `ssh`/`sshd` and `avahi-daemon` when the services are present and systemd is available; otherwise report the skipped service action without treating it as a package-install failure.
-9. Leave firewall policy, SSH password policy, hostname, locale, timezone, and shell customization unchanged.
+8. Install the user guidance payload from `files/rog/AGENTS.md` as `/home/rog/AGENTS.md`, preserving an identical existing file unless an explicit overwrite option is introduced.
+9. Enable and start `ssh`/`sshd` and `avahi-daemon` when the services are present and systemd is available; otherwise report the skipped service action without treating it as a package-install failure.
+10. Leave firewall policy, SSH password policy, hostname, locale, timezone, and shell customization unchanged.
 
 Supported options:
 
@@ -50,6 +51,7 @@ The script will not silently create an SSH account with no usable key unless `--
 ## Repository layout
 
 - `setup.sh`: single executable entry point and all setup logic.
+- `files/rog/AGENTS.md`: user-home guidance installed for the `rog` account.
 - `README.md`: prerequisites, one-line fetch command, local invocation examples, supported distributions, options, and security notes.
 - `tests/setup.bats`: shell-level tests using a fake root and stubbed commands for argument parsing, OS rejection, idempotency-sensitive file generation, and key validation.
 - `docs/superpowers/specs/...`: approved design documentation.
