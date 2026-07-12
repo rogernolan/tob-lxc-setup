@@ -32,7 +32,7 @@ After setup, run `codex` as `rog` and complete the interactive sign-in flow. See
 Review-first workflow:
 
 ```sh
-curl -fsSLo /tmp/tob-lxc-setup.sh https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh
+wget -qO /tmp/tob-lxc-setup.sh https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh
 less /tmp/tob-lxc-setup.sh
 bash /tmp/tob-lxc-setup.sh --github-user rogernolan
 rm -f /tmp/tob-lxc-setup.sh
@@ -41,7 +41,7 @@ rm -f /tmp/tob-lxc-setup.sh
 Convenience one-liner for a trusted homelab host:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh | bash -s -- --github-user rogernolan
+wget -qO- https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh | bash -s -- --github-user rogernolan
 ```
 
 The one-liner executes the current `main` branch as root. Review changes to the repository before using it on a host where supply-chain review matters.
