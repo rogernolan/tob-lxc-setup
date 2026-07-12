@@ -84,12 +84,6 @@ printf 'usermod %s\n' "$*" >> "$TEST_CALLS"
 awk -F: 'BEGIN { OFS = ":" } $1 == "sudo" { $4 = "rog" } { print }' "$TEST_ROOT/etc/group" > "$TEST_ROOT/etc/group.tmp"
 mv "$TEST_ROOT/etc/group.tmp" "$TEST_ROOT/etc/group"
 EOF
-    cat > "$BIN/chpasswd" <<'EOF'
-#!/usr/bin/env bash
-printf 'chpasswd stdin received\n' >> "$TEST_CALLS"
-IFS= read -r password_line
-[[ "$password_line" == "rog:${TEST_EXPECTED_PASSWORD}" ]] || exit 1
-EOF
     cat > "$BIN/visudo" <<'EOF'
 #!/usr/bin/env bash
 printf 'visudo %s\n' "$*" >> "$TEST_CALLS"
@@ -135,7 +129,7 @@ EOF
 run_setup() {
     TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" TEST_KEYS="$KEYS" TEST_GUIDANCE="$SCRIPT_DIR/files/rog/AGENTS.md" \
         PATH="$BIN:$PATH" SETUP_PATH_UNUSED=1 SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" \
-        SETUP_PAYLOAD_DIR="${TEST_PAYLOAD_DIR:-$SCRIPT_DIR/files}" "$SETUP_SCRIPT" "$@"
+        SETUP_PAYLOAD_DIR="${TEST_PAYLOAD_DIR:-$SCRIPT_DIR/files}" "$SETUP_SCRIPT" "$@" >"$FIXTURE/output" 2>&1
 }
 
 test_help() {
@@ -168,10 +162,8 @@ test_setup_is_idempotent() {
     key_file="$FIXTURE/rog.pub"
     printf '%s\n%s\n' "$KEYS" "$KEYS" > "$key_file"
 
-    TEST_EXPECTED_PASSWORD='first-secret' run_setup --ssh-public-key-file "$key_file" \
-        <<< $'first-secret\nfirst-secret\n'
-    TEST_EXPECTED_PASSWORD='second-secret' run_setup --ssh-public-key-file "$key_file" \
-        <<< $'second-secret\nsecond-secret\n'
+    run_setup --ssh-public-key-file "$key_file"
+    run_setup --ssh-public-key-file "$key_file"
 
     assert_file_exists "$ROOT/etc/sudoers.d/rog"
     assert_contains 'rog ALL=(ALL:ALL) ALL' "$ROOT/etc/sudoers.d/rog"
@@ -186,54 +178,21 @@ test_setup_is_idempotent() {
     assert_contains 'en_GB.UTF-8 UTF-8' "$ROOT/etc/locale.gen"
     assert_contains 'npm install --global @openai/codex' "$FIXTURE/calls"
     assert_count 1 'usermod --append --groups sudo rog' "$FIXTURE/calls"
-    assert_count 1 'chpasswd stdin received' "$FIXTURE/calls"
+    assert_contains 'ACTION REQUIRED: set a password for rog with: passwd rog' "$FIXTURE/output"
     rm -rf "$FIXTURE"
 }
 
-test_new_user_gets_prompted_password() {
+test_existing_user_does_not_require_password() {
     make_fixture
-    TEST_EXPECTED_PASSWORD='first-secret' run_setup --no-ssh-key \
-        <<< $'first-secret\nfirst-secret\n'
-    assert_count 1 'chpasswd stdin received' "$FIXTURE/calls"
-    if grep -Fq 'first-secret' "$FIXTURE/calls"; then
-        fail 'password appeared in command log'
-    fi
-    rm -rf "$FIXTURE"
-}
-
-test_rejects_mismatched_passwords() {
-    make_fixture
-    TEST_EXPECTED_PASSWORD='unused' run_setup --no-ssh-key \
-        <<< $'first-secret\nsecond-secret\n' && fail 'mismatched passwords were accepted'
-    assert_file_not_exists "$ROOT/etc/sudoers.d/rog"
-    assert_count 0 'chpasswd stdin received' "$FIXTURE/calls"
-    rm -rf "$FIXTURE"
-}
-
-test_rejects_empty_passwords() {
-    make_fixture
-    TEST_EXPECTED_PASSWORD='unused' run_setup --no-ssh-key \
-        <<< $'\n\n' && fail 'empty password was accepted'
-    assert_file_not_exists "$ROOT/etc/sudoers.d/rog"
-    assert_count 0 'chpasswd stdin received' "$FIXTURE/calls"
-    rm -rf "$FIXTURE"
-}
-
-test_existing_user_password_is_preserved() {
-    make_fixture
-    TEST_EXPECTED_PASSWORD='first-secret' run_setup --no-ssh-key \
-        <<< $'first-secret\nfirst-secret\n'
-    TEST_EXPECTED_PASSWORD='second-secret' run_setup --no-ssh-key \
-        <<< $'second-secret\nsecond-secret\n'
-    assert_count 1 'chpasswd stdin received' "$FIXTURE/calls"
+    run_setup --no-ssh-key
+    assert_contains 'ACTION REQUIRED: set a password for rog with: passwd rog' "$FIXTURE/output"
     rm -rf "$FIXTURE"
 }
 
 test_installs_npm_separately_when_missing() {
     make_fixture
     rm -f "$BIN/npm"
-    TEST_EXPECTED_PASSWORD='fallback-secret' run_setup --no-ssh-key \
-        <<< $'fallback-secret\nfallback-secret\n'
+    run_setup --no-ssh-key
     assert_contains 'apt-get install -y --no-install-recommends npm' "$FIXTURE/calls"
     rm -rf "$FIXTURE"
 }
@@ -241,8 +200,7 @@ test_installs_npm_separately_when_missing() {
 test_bootstrap_fetches_missing_payload() {
     make_fixture
     KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
-    TEST_EXPECTED_PASSWORD='bootstrap-secret' TEST_PAYLOAD_DIR="$FIXTURE/missing" run_setup \
-        <<< $'bootstrap-secret\nbootstrap-secret\n'
+    TEST_PAYLOAD_DIR="$FIXTURE/missing" run_setup
     assert_file_exists "$ROOT/home/rog/AGENTS.md"
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
@@ -254,10 +212,7 @@ test_help
 test_rejects_unsupported_os
 test_dry_run_is_non_mutating
 test_setup_is_idempotent
-test_new_user_gets_prompted_password
-test_rejects_mismatched_passwords
-test_rejects_empty_passwords
-test_existing_user_password_is_preserved
+test_existing_user_does_not_require_password
 test_installs_npm_separately_when_missing
 test_bootstrap_fetches_missing_payload
 printf 'PASS: setup tests\n'

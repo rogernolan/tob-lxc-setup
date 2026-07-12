@@ -54,7 +54,7 @@ The one-liner executes the current `main` branch as root. Review changes to the 
 ./setup.sh --github-user rogernolan
 ```
 
-The first run prompts twice for the `rog` user's password. Repeat runs preserve the existing password, and `--dry-run` does not prompt.
+The setup finishes non-interactively. Set the `rog` user's password afterward with `passwd rog`.
 
 Use a local public-key file instead of GitHub:
 

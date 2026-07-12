@@ -208,29 +208,12 @@ user_in_group() {
     awk -F: -v group="$1" -v user=rog '$1 == group { n=split($4, members, ","); for (i = 1; i <= n; i++) if (members[i] == user) exit 0; exit 1 } END { if (NR == 0) exit 1 }' "$(root_path /etc/group)"
 }
 
-set_user_password() {
-    local password confirmation
-    read -r -s -p 'Password for rog: ' password
-    printf '\n' >&2
-    read -r -s -p 'Confirm password for rog: ' confirmation
-    printf '\n' >&2
-    [[ -n "$password" ]] || die 'password for rog must not be empty'
-    [[ "$password" == "$confirmation" ]] || die 'password confirmations do not match'
-    printf 'rog:%s\n' "$password" | chpasswd
-}
-
 configure_user() {
-    local created=0
     if user_exists; then
         log 'user rog already exists'
     else
         log 'creating user rog'
         run useradd --create-home --shell /bin/bash rog
-        created=1
-    fi
-
-    if ((created)) && (( ! DRY_RUN )); then
-        set_user_password
     fi
 
     if ! group_exists sudo; then
@@ -367,6 +350,7 @@ main() {
     fi
     install_user_guidance
     manage_services
+    log 'ACTION REQUIRED: set a password for rog with: passwd rog'
     log 'LXC setup complete'
 }
 
