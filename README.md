@@ -62,12 +62,6 @@ Use a local public-key file instead of GitHub:
 ./setup.sh --ssh-public-key-file /path/to/rog.pub
 ```
 
-Create the account without configuring SSH keys:
-
-```sh
-./setup.sh --no-ssh-key
-```
-
 Show planned actions without changing the host:
 
 ```sh
@@ -88,7 +82,9 @@ Options:
 - SSH key lines are restricted to Ed25519, ECDSA, and RSA OpenSSH public keys and are deduplicated by key type and material.
 - The `rog` sudo rule is written to `/etc/sudoers.d/rog`, validated with `visudo`, and installed with mode `0440`.
 - Existing `/home/rog/AGENTS.md` is preserved. Existing user data and unrelated system configuration are not overwritten.
-- The script does not configure firewall rules, disable SSH password authentication, change hostnames, change timezones, or customize shells.
+- SSH public-key installation is mandatory. After at least one accepted key is installed for `rog`, the script warns and configures SSH to require public keys, disabling password, keyboard-interactive/challenge-response, GSSAPI/Kerberos, and empty-password authentication.
+- If no accepted SSH key is available, setup fails before SSH authentication hardening is applied. Use console access to recover from an unexpected key problem.
+- The script does not configure firewall rules, change hostnames, change timezones, or customize shells.
 - Package upgrades can restart services or change system behavior. Run the script during a suitable maintenance window.
 - `en_GB.UTF-8` is generated so SSH sessions that request that locale do not produce Bash warnings; existing `LANG` and locale policy are otherwise preserved.
 - Repeat runs are expected and should converge without duplicate users, group membership, SSH keys, or guidance files.

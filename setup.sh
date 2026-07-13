@@ -12,7 +12,6 @@ ROOT=${SETUP_ROOT:-/}
 PAYLOAD_DIR=${SETUP_PAYLOAD_DIR:-"$SCRIPT_DIR/files"}
 GITHUB_USER=rogernolan
 SSH_PUBLIC_KEY_FILE=
-NO_SSH_KEY=0
 DRY_RUN=0
 SUDOERS_TMP=
 GUIDANCE_TMP=
@@ -27,7 +26,6 @@ Configure a Debian or Ubuntu LXC for Rog's homelab.
 Options:
   --github-user USER          Fetch SSH keys from github.com/USER.keys
   --ssh-public-key-file FILE Install keys from a local public-key file
-  --no-ssh-key                Do not configure an SSH key for rog
   --dry-run                   Show planned changes without mutating the host
   --help                      Show this help
 EOF
@@ -90,10 +88,6 @@ parse_args() {
                 SSH_PUBLIC_KEY_FILE=$2
                 shift 2
                 ;;
-            --no-ssh-key)
-                NO_SSH_KEY=1
-                shift
-                ;;
             --dry-run)
                 DRY_RUN=1
                 shift
@@ -130,7 +124,7 @@ validate_environment() {
     esac
 
     [[ "$GITHUB_USER" =~ ^[A-Za-z0-9-]+$ ]] || die 'GitHub username contains unsupported characters'
-    if (( ! NO_SSH_KEY )) && [[ -n "$SSH_PUBLIC_KEY_FILE" && ! -r "$SSH_PUBLIC_KEY_FILE" ]]; then
+    if [[ -n "$SSH_PUBLIC_KEY_FILE" && ! -r "$SSH_PUBLIC_KEY_FILE" ]]; then
         die "SSH public-key file is not readable: $SSH_PUBLIC_KEY_FILE"
     fi
 }
@@ -251,7 +245,7 @@ valid_key_line() {
 }
 
 install_ssh_keys() {
-    local key_source key_tmp ssh_dir authorized_keys line key_type key_data
+    local key_source key_tmp ssh_dir authorized_keys line key_type key_data key_count
     key_tmp=$(mktemp "$(root_path /tmp)/tob-lxc-setup.keys.XXXXXX")
     trap 'rm -f -- "$key_tmp"; cleanup' RETURN
 
@@ -281,6 +275,36 @@ install_ssh_keys() {
         fi
     done < "$key_tmp"
     rm -f -- "$key_tmp"
+    trap - RETURN
+
+    key_count=$(awk '$1 == "ssh-ed25519" || $1 == "ssh-rsa" || $1 ~ /^ecdsa-sha2-/ { count++ } END { print count + 0 }' "$authorized_keys")
+    ((key_count > 0)) || die 'no SSH public key was installed for rog'
+}
+
+configure_ssh_authentication() {
+    local ssh_config_dir ssh_config_file ssh_config_tmp
+    ssh_config_dir=$(root_path /etc/ssh/sshd_config.d)
+    ssh_config_file="$ssh_config_dir/99-tob-lxc-setup.conf"
+    if ((DRY_RUN)); then
+        log 'would warn and harden SSH authentication after installing a public key'
+        return
+    fi
+
+    log 'WARNING: disabling password authentication and unused SSH authentication methods; public-key authentication is required'
+    run mkdir -p "$ssh_config_dir"
+    ssh_config_tmp=$(mktemp "$(root_path /tmp)/tob-lxc-setup.sshd.XXXXXX")
+    trap 'rm -f -- "$ssh_config_tmp"; cleanup' RETURN
+    cat > "$ssh_config_tmp" <<'EOF'
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+GSSAPIAuthentication no
+PermitEmptyPasswords no
+EOF
+    sshd -t -f "$ssh_config_tmp" || die 'generated SSH authentication policy failed sshd validation'
+    install -m 0644 "$ssh_config_tmp" "$ssh_config_file"
+    rm -f -- "$ssh_config_tmp"
     trap - RETURN
 }
 
@@ -341,12 +365,12 @@ main() {
     install_codex
     configure_user
     configure_sudo
-    if ((NO_SSH_KEY)); then
-        log 'SSH key installation disabled by --no-ssh-key'
-    elif ((DRY_RUN)); then
+    if ((DRY_RUN)); then
         log 'would install SSH keys for rog'
+        configure_ssh_authentication
     else
         install_ssh_keys
+        configure_ssh_authentication
     fi
     install_user_guidance
     manage_services

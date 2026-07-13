@@ -37,7 +37,7 @@ make_fixture() {
     FIXTURE=$(mktemp -d)
     ROOT="$FIXTURE/root"
     BIN="$FIXTURE/bin"
-    mkdir -p "$ROOT/etc" "$ROOT/home" "$ROOT/tmp" "$ROOT/var/lib" "$BIN"
+    mkdir -p "$ROOT/etc/ssh/sshd_config.d" "$ROOT/home" "$ROOT/tmp" "$ROOT/var/lib" "$BIN"
     cat > "$ROOT/etc/os-release" <<'EOF'
 ID=debian
 NAME="Debian GNU/Linux"
@@ -87,6 +87,11 @@ EOF
     cat > "$BIN/visudo" <<'EOF'
 #!/usr/bin/env bash
 printf 'visudo %s\n' "$*" >> "$TEST_CALLS"
+exit 0
+EOF
+    cat > "$BIN/sshd" <<'EOF'
+#!/usr/bin/env bash
+printf 'sshd %s\n' "$*" >> "$TEST_CALLS"
 exit 0
 EOF
     cat > "$BIN/systemctl" <<'EOF'
@@ -149,7 +154,7 @@ test_rejects_unsupported_os() {
 
 test_dry_run_is_non_mutating() {
     make_fixture
-    TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" PATH="$BIN:$PATH" SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" "$SETUP_SCRIPT" --dry-run --no-ssh-key
+    TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" PATH="$BIN:$PATH" SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" "$SETUP_SCRIPT" --dry-run
     assert_file_not_exists "$ROOT/etc/sudoers.d/rog"
     assert_file_not_exists "$ROOT/home/rog/AGENTS.md"
     [[ ! -s "$FIXTURE/calls" ]] || fail 'dry-run executed mutating commands'
@@ -169,6 +174,15 @@ test_setup_is_idempotent() {
     assert_contains 'rog ALL=(ALL:ALL) ALL' "$ROOT/etc/sudoers.d/rog"
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
+    assert_contains 'PubkeyAuthentication yes' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_contains 'PasswordAuthentication no' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_contains 'KbdInteractiveAuthentication no' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_contains 'ChallengeResponseAuthentication no' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_contains 'GSSAPIAuthentication no' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_contains 'PermitEmptyPasswords no' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_contains 'WARNING' "$FIXTURE/output"
+    assert_contains 'password authentication' "$FIXTURE/output"
+    assert_contains 'sshd -t' "$FIXTURE/calls"
     assert_file_exists "$ROOT/home/rog/AGENTS.md"
     assert_contains 'practical homelab sysadmin assistant' "$ROOT/home/rog/AGENTS.md"
     assert_contains 'apt-get update' "$FIXTURE/calls"
@@ -185,15 +199,40 @@ test_setup_is_idempotent() {
 
 test_existing_user_does_not_require_password() {
     make_fixture
-    run_setup --no-ssh-key
+    KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
+    run_setup
     assert_contains 'ACTION REQUIRED: set a password for rog with: passwd rog' "$FIXTURE/output"
+    rm -rf "$FIXTURE"
+}
+
+test_rejects_removed_no_ssh_key_option() {
+    make_fixture
+    if TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" PATH="$BIN:$PATH" SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" "$SETUP_SCRIPT" --no-ssh-key >"$FIXTURE/output" 2>&1; then
+        fail '--no-ssh-key was accepted'
+    fi
+    assert_contains 'unknown option: --no-ssh-key' "$FIXTURE/output"
+    [[ ! -s "$FIXTURE/calls" ]] || fail 'commands ran before removed-option rejection'
+    rm -rf "$FIXTURE"
+}
+
+test_empty_key_source_does_not_harden_ssh() {
+    make_fixture
+    key_file="$FIXTURE/empty.pub"
+    : > "$key_file"
+    if run_setup --ssh-public-key-file "$key_file"; then
+        fail 'empty SSH key source was accepted'
+    fi
+    assert_contains 'no SSH public key was installed for rog' "$FIXTURE/output"
+    assert_file_not_exists "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
+    assert_not_contains 'sshd -t' "$FIXTURE/calls"
     rm -rf "$FIXTURE"
 }
 
 test_installs_npm_separately_when_missing() {
     make_fixture
     rm -f "$BIN/npm"
-    run_setup --no-ssh-key
+    KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
+    run_setup
     assert_contains 'apt-get install -y --no-install-recommends npm' "$FIXTURE/calls"
     rm -rf "$FIXTURE"
 }
@@ -214,6 +253,8 @@ test_rejects_unsupported_os
 test_dry_run_is_non_mutating
 test_setup_is_idempotent
 test_existing_user_does_not_require_password
+test_rejects_removed_no_ssh_key_option
+test_empty_key_source_does_not_harden_ssh
 test_installs_npm_separately_when_missing
 test_bootstrap_fetches_missing_payload
 printf 'PASS: setup tests\n'
