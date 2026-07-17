@@ -2,7 +2,7 @@
 
 Small, repeatable setup for Debian and Ubuntu LXC guests on Proxmox.
 
-The script installs common administration tools, creates the `rog` administrator account, configures sudo, installs Rog's public GitHub SSH keys, adds `/home/rog/AGENTS.md`, and enables SSH/Avahi when systemd is active.
+The script installs common administration tools, installs the `xterm-ghostty` terminfo entry system-wide, creates the `rog` administrator account, configures sudo, installs Rog's public GitHub SSH keys, adds `/home/rog/AGENTS.md`, and enables SSH/Avahi when systemd is active.
 
 ## Supported hosts
 
@@ -17,7 +17,7 @@ Unsupported distributions fail before package or configuration changes are made.
 
 The apt packages are:
 
-`ca-certificates`, `curl`, `git`, `jq`, `locales`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, and `avahi-daemon`.
+`ca-certificates`, `curl`, `git`, `jq`, `locales`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, `ncurses-bin`, and `avahi-daemon`.
 
 If `npm` is not already available, the package manager installs it separately; its package dependencies provide a compatible Node.js runtime.
 
@@ -28,6 +28,8 @@ npm install --global @openai/codex
 ```
 
 After setup, run `codex` as `rog` and complete the interactive sign-in flow. See the [Codex CLI documentation](https://developers.openai.com/codex/cli/) for current authentication and usage details.
+
+Ghostty's `xterm-ghostty` definition is compiled with `tic -x` into `/usr/share/terminfo`, making it available to all users and commands run through `sudo`.
 
 ## Quick start
 
@@ -78,7 +80,7 @@ Options:
 
 ## Security and operational notes
 
-- Only public SSH key text is downloaded from GitHub; downloaded shell code is never executed by the setup script.
+- Only public SSH key text and validated repository payloads are downloaded from GitHub; downloaded shell code is never executed by the setup script.
 - SSH key lines are restricted to Ed25519, ECDSA, and RSA OpenSSH public keys and are deduplicated by key type and material.
 - The `rog` sudo rule is written to `/etc/sudoers.d/rog`, validated with `visudo`, and installed with mode `0440`.
 - Existing `/home/rog/AGENTS.md` is preserved. Existing user data and unrelated system configuration are not overwritten.

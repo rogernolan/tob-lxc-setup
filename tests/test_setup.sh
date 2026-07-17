@@ -102,6 +102,29 @@ EOF
 #!/usr/bin/env bash
 printf 'locale-gen %s\n' "$*" >> "$TEST_CALLS"
 EOF
+    cat > "$BIN/tic" <<'EOF'
+#!/usr/bin/env bash
+printf 'tic %s\n' "$*" >> "$TEST_CALLS"
+output_dir=
+source_file=
+while (($#)); do
+    case "$1" in
+        -o)
+            output_dir=$2
+            shift 2
+            ;;
+        -x)
+            shift
+            ;;
+        *)
+            source_file=$1
+            shift
+            ;;
+    esac
+done
+mkdir -p "$output_dir/x"
+cp "$source_file" "$output_dir/x/xterm-ghostty"
+EOF
     cat > "$BIN/chown" <<'EOF'
 #!/usr/bin/env bash
 printf 'chown %s\n' "$*" >> "$TEST_CALLS"
@@ -116,6 +139,8 @@ EOF
 printf 'curl %s\n' "$*" >> "$TEST_CALLS"
 if [[ "$*" == *'.keys'* ]]; then
     printf '%s\n' "$TEST_KEYS"
+elif [[ "$*" == *'ghostty.terminfo'* ]]; then
+    cat "$TEST_TERMINFO"
 else
     cat "$TEST_GUIDANCE"
 fi
@@ -132,7 +157,7 @@ EOF
 }
 
 run_setup() {
-    TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" TEST_KEYS="$KEYS" TEST_GUIDANCE="$SCRIPT_DIR/files/rog/AGENTS.md" \
+    TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" TEST_KEYS="$KEYS" TEST_GUIDANCE="$SCRIPT_DIR/files/rog/AGENTS.md" TEST_TERMINFO="$SCRIPT_DIR/files/terminfo/ghostty.terminfo" \
         PATH="$BIN:$PATH" SETUP_PATH_UNUSED=1 SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" \
         SETUP_PAYLOAD_DIR="${TEST_PAYLOAD_DIR:-$SCRIPT_DIR/files}" "$SETUP_SCRIPT" "$@" >"$FIXTURE/output" 2>&1
 }
@@ -185,8 +210,12 @@ test_setup_is_idempotent() {
     assert_contains 'sshd -t' "$FIXTURE/calls"
     assert_file_exists "$ROOT/home/rog/AGENTS.md"
     assert_contains 'practical homelab sysadmin assistant' "$ROOT/home/rog/AGENTS.md"
+    assert_file_exists "$ROOT/usr/share/terminfo/x/xterm-ghostty"
+    assert_contains 'xterm-ghostty|ghostty|Ghostty' "$ROOT/usr/share/terminfo/x/xterm-ghostty"
+    assert_count 2 "tic -x -o $ROOT/usr/share/terminfo" "$FIXTURE/calls"
     assert_contains 'apt-get update' "$FIXTURE/calls"
     assert_contains 'apt-get install -y --no-install-recommends ca-certificates curl git jq locales openssh-client' "$FIXTURE/calls"
+    assert_contains 'ncurses-bin' "$FIXTURE/calls"
     assert_not_contains 'apt-get install -y --no-install-recommends ca-certificates curl git jq locales nodejs' "$FIXTURE/calls"
     assert_contains 'locale-gen en_GB.UTF-8' "$FIXTURE/calls"
     assert_contains 'en_GB.UTF-8 UTF-8' "$ROOT/etc/locale.gen"
@@ -245,6 +274,8 @@ test_bootstrap_fetches_missing_payload() {
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
     assert_contains 'raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/files/rog/AGENTS.md' "$FIXTURE/calls"
+    assert_contains 'raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/files/terminfo/ghostty.terminfo' "$FIXTURE/calls"
+    assert_file_exists "$ROOT/usr/share/terminfo/x/xterm-ghostty"
     rm -rf "$FIXTURE"
 }
 

@@ -15,7 +15,9 @@ SSH_PUBLIC_KEY_FILE=
 DRY_RUN=0
 SUDOERS_TMP=
 GUIDANCE_TMP=
+TERMINFO_TMP=
 PAYLOAD_URL=${SETUP_PAYLOAD_URL:-https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/files/rog/AGENTS.md}
+TERMINFO_URL=${SETUP_TERMINFO_URL:-https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/files/terminfo/ghostty.terminfo}
 
 usage() {
     cat <<'EOF'
@@ -71,6 +73,9 @@ cleanup() {
     fi
     if [[ -n "$GUIDANCE_TMP" && -e "$GUIDANCE_TMP" ]]; then
         rm -f -- "$GUIDANCE_TMP"
+    fi
+    if [[ -n "$TERMINFO_TMP" && -e "$TERMINFO_TMP" ]]; then
+        rm -f -- "$TERMINFO_TMP"
     fi
 }
 trap cleanup EXIT
@@ -141,6 +146,7 @@ install_packages() {
         ripgrep
         sudo
         tmux
+        ncurses-bin
         avahi-daemon
     )
     log 'updating package metadata'
@@ -153,6 +159,29 @@ install_packages() {
         log 'installing npm'
         run_env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends npm
     fi
+}
+
+install_ghostty_terminfo() {
+    local source destination
+    source="$PAYLOAD_DIR/terminfo/ghostty.terminfo"
+    destination=$(root_path /usr/share/terminfo)
+    if [[ ! -r "$source" ]]; then
+        ((DRY_RUN)) && {
+            log "would fetch and install Ghostty terminfo from $TERMINFO_URL"
+            return
+        }
+        log "fetching Ghostty terminfo from $TERMINFO_URL"
+        TERMINFO_TMP=$(mktemp "$(root_path /tmp)/tob-lxc-setup.terminfo.XXXXXX")
+        curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "$TERMINFO_URL" > "$TERMINFO_TMP"
+        source=$TERMINFO_TMP
+    fi
+    grep -q '^xterm-ghostty|ghostty|Ghostty,' "$source" || die 'Ghostty terminfo payload failed validation'
+    if ((!DRY_RUN)); then
+        command -v tic >/dev/null 2>&1 || die 'tic is unavailable after installing ncurses-bin'
+    fi
+    log 'installing Ghostty terminfo system-wide'
+    run mkdir -p "$destination"
+    run tic -x -o "$destination" "$source"
 }
 
 configure_locale() {
@@ -361,6 +390,7 @@ main() {
     parse_args "$@"
     validate_environment
     install_packages
+    install_ghostty_terminfo
     configure_locale
     install_codex
     configure_user
