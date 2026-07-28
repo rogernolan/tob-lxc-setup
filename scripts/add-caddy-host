@@ -1,0 +1,251 @@
+#!/bin/sh
+set -eu
+
+program=${0##*/}
+caddyfile=/etc/caddy/Caddyfile
+sites_dir=/etc/caddy/sites-enabled
+ddns_env=/etc/cloudflare-ddns/cloudflare-ddns.env
+ddns_command=/usr/local/sbin/cloudflare-ddns
+lock_file=/run/lock/add-caddy-host.lock
+backup_dir=/var/backups/caddy-hosts
+insecure_tls=false
+force=false
+
+usage() {
+	cat >&2 <<EOF
+Usage: $program [--insecure-upstream-tls] [--force] HOSTNAME UPSTREAM
+
+Examples:
+  $program app.hatbat.net http://192.168.68.20:8080
+  $program --insecure-upstream-tls admin.hatbat.net https://192.168.68.30:8443
+
+UPSTREAM must be an explicit http:// or https:// URL using an RFC1918 IPv4
+address and port. Paths, queries, fragments, and embedded credentials are
+not accepted.
+EOF
+	exit 2
+}
+
+fail() {
+	printf '%s: %s\n' "$program" "$*" >&2
+	exit 1
+}
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--insecure-upstream-tls) insecure_tls=true; shift ;;
+		--force) force=true; shift ;;
+		--help|-h) usage ;;
+		--) shift; break ;;
+		-*) usage ;;
+		*) break ;;
+	esac
+done
+
+[ "$#" -eq 2 ] || usage
+hostname=$1
+upstream=${2%/}
+
+[ "$(id -u)" -eq 0 ] || fail "run as root (for example: sudo $program ...)"
+
+if ! printf '%s\n' "$hostname" |
+	grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.hatbat\.net$'; then
+	fail "HOSTNAME must be a lowercase subdomain of hatbat.net"
+fi
+
+if ! printf '%s\n' "$upstream" |
+	grep -Eq '^https?://(10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}):([1-9][0-9]{0,4})$'; then
+	fail "UPSTREAM must use http(s), an RFC1918 IPv4 address, and an explicit port"
+fi
+
+upstream_hostport=${upstream#*://}
+upstream_ip=${upstream_hostport%:*}
+upstream_port=${upstream_hostport##*:}
+
+old_ifs=$IFS
+IFS=.
+set -- $upstream_ip
+IFS=$old_ifs
+[ "$#" -eq 4 ] || fail "invalid upstream IPv4 address"
+for octet in "$@"; do
+	[ "$octet" -le 255 ] 2>/dev/null || fail "invalid upstream IPv4 address"
+done
+[ "$upstream_port" -le 65535 ] || fail "invalid upstream port"
+
+case "$upstream" in
+	https://*) ;;
+	*) [ "$insecure_tls" = false ] ||
+		fail "--insecure-upstream-tls is valid only with an https upstream" ;;
+esac
+
+if [ "$insecure_tls" = true ]; then
+	probe_result=$(curl --insecure --silent --show-error --max-time 5 \
+		--output /dev/null --write-out '%{http_code}' "$upstream/" || true)
+else
+	probe_result=$(curl --silent --show-error --max-time 5 \
+		--output /dev/null --write-out '%{http_code}' "$upstream/" || true)
+fi
+case "$probe_result" in
+	000|'') fail "could not connect to upstream $upstream" ;;
+	*) printf '%s: upstream probe returned HTTP %s\n' "$program" "$probe_result" ;;
+esac
+
+for required_path in "$caddyfile" "$ddns_env" "$ddns_command"; do
+	[ -e "$required_path" ] || fail "required path is missing: $required_path"
+done
+
+install -d -o root -g root -m 0755 "$sites_dir"
+install -d -o root -g root -m 0700 "$backup_dir"
+exec 9>"$lock_file"
+flock -n 9 || fail "another host configuration operation is running"
+
+site_file=$sites_dir/$hostname.caddy
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+operation_backup=$backup_dir/$timestamp-$hostname
+install -d -o root -g root -m 0700 "$operation_backup"
+cp -a "$caddyfile" "$operation_backup/Caddyfile"
+cp -a "$ddns_env" "$operation_backup/cloudflare-ddns.env"
+site_existed=false
+if [ -e "$site_file" ]; then
+	site_existed=true
+	cp -a "$site_file" "$operation_backup/$hostname.caddy"
+fi
+
+transaction_active=false
+rollback() {
+	[ "$transaction_active" = true ] || return 0
+	transaction_active=false
+	printf '%s: rolling back configuration\n' "$program" >&2
+	cp -a "$operation_backup/Caddyfile" "$caddyfile"
+	cp -a "$operation_backup/cloudflare-ddns.env" "$ddns_env"
+	if [ "$site_existed" = true ]; then
+		cp -a "$operation_backup/$hostname.caddy" "$site_file"
+	else
+		rm -f -- "$site_file"
+	fi
+	caddy validate --config "$caddyfile" >/dev/null 2>&1 &&
+		systemctl reload caddy >/dev/null 2>&1 || true
+}
+
+site_tmp=
+env_tmp=
+cleanup() {
+	rollback
+	[ -z "$site_tmp" ] || rm -f -- "$site_tmp"
+	[ -z "$env_tmp" ] || rm -f -- "$env_tmp"
+}
+trap cleanup EXIT HUP INT TERM
+site_tmp=$(mktemp "$sites_dir/.add-caddy-host.XXXXXX")
+env_tmp=$(mktemp "$(dirname "$ddns_env")/.add-caddy-host.XXXXXX")
+
+{
+	printf '%s {\n' "$hostname"
+	printf '\treverse_proxy %s' "$upstream"
+	if [ "$insecure_tls" = true ]; then
+		printf ' {\n'
+		printf '\t\ttransport http {\n'
+		printf '\t\t\ttls_insecure_skip_verify\n'
+		printf '\t\t}\n'
+		printf '\t}\n'
+	else
+		printf '\n'
+	fi
+	printf '}\n'
+} >"$site_tmp"
+chown root:root "$site_tmp"
+chmod 0644 "$site_tmp"
+
+if [ -e "$site_file" ] && cmp -s "$site_tmp" "$site_file"; then
+	printf '%s: Caddy site already has the requested configuration\n' "$hostname"
+elif [ -e "$site_file" ] && [ "$force" = false ]; then
+	fail "$site_file already exists with different content; inspect it or use --force"
+else
+	transaction_active=true
+	mv -f -- "$site_tmp" "$site_file"
+fi
+transaction_active=true
+
+# Source the root-owned file to obtain the current alias list without printing
+# the API token. The hostname validation above makes the new value safe.
+# shellcheck disable=SC1090
+. "$ddns_env"
+: "${CF_ALIASES:=}"
+new_aliases=
+alias_found=false
+for alias_name in $CF_ALIASES; do
+	[ "$alias_name" = "$hostname" ] && alias_found=true
+	case " $new_aliases " in
+		*" $alias_name "*) ;;
+		*)
+			if [ -n "$new_aliases" ]; then
+				new_aliases="$new_aliases $alias_name"
+			else
+				new_aliases=$alias_name
+			fi
+			;;
+	esac
+done
+if [ "$alias_found" = false ]; then
+	if [ -n "$new_aliases" ]; then
+		new_aliases="$new_aliases $hostname"
+	else
+		new_aliases=$hostname
+	fi
+fi
+
+awk -v aliases="$new_aliases" '
+	BEGIN { found = 0 }
+	/^CF_ALIASES=/ {
+		printf "CF_ALIASES=%c%s%c\n", 39, aliases, 39
+		found = 1
+		next
+	}
+	{ print }
+	END {
+		if (!found)
+			printf "CF_ALIASES=%c%s%c\n", 39, aliases, 39
+	}
+' "$ddns_env" >"$env_tmp"
+chown root:root "$env_tmp"
+chmod 0600 "$env_tmp"
+mv -f -- "$env_tmp" "$ddns_env"
+
+if ! caddy validate --config "$caddyfile"; then
+	rollback
+	fail "Caddy validation failed"
+fi
+
+if ! "$ddns_command"; then
+	rollback
+	fail "Cloudflare DNS update failed"
+fi
+
+if ! systemctl reload caddy; then
+	rollback
+	fail "Caddy reload failed"
+fi
+
+transaction_active=false
+printf '%s: configured %s -> %s\n' "$program" "$hostname" "$upstream"
+printf '%s: backup: %s\n' "$program" "$operation_backup"
+
+attempt=1
+while [ "$attempt" -le 6 ]; do
+	http_code=$(curl --silent --show-error --max-time 10 \
+		--output /dev/null --write-out '%{http_code}' \
+		--resolve "$hostname:443:127.0.0.1" "https://$hostname/" || true)
+	case "$http_code" in
+		000|'') ;;
+		*)
+			printf '%s: local HTTPS verification returned HTTP %s\n' \
+				"$program" "$http_code"
+			exit 0
+			;;
+	esac
+	[ "$attempt" -eq 6 ] || sleep 5
+	attempt=$((attempt + 1))
+done
+
+printf '%s: configuration is active, but a local TLS response was not ready; check Caddy certificate logs\n' \
+	"$program" >&2
+exit 0

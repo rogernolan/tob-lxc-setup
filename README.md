@@ -91,12 +91,58 @@ Options:
 - `en_GB.UTF-8` is generated so SSH sessions that request that locale do not produce Bash warnings; existing `LANG` and locale policy are otherwise preserved.
 - Repeat runs are expected and should converge without duplicate users, group membership, SSH keys, or guidance files.
 
+## Caddy host manager
+
+[`scripts/add-caddy-host`](scripts/add-caddy-host) adds a `hatbat.net`
+reverse-proxy hostname to a gateway that already has Caddy and the Cloudflare
+DDNS service installed. It is intentionally not run by `setup.sh`, because it
+is specific to the gateway LXC.
+
+The gateway must provide:
+
+- `/etc/caddy/Caddyfile`, containing
+  `import /etc/caddy/sites-enabled/*.caddy`;
+- `/etc/cloudflare-ddns/cloudflare-ddns.env`, with `CF_ALIASES` and the
+  root-only Cloudflare credentials;
+- `/usr/local/sbin/cloudflare-ddns`;
+- working Caddy and systemd services.
+
+Install the command:
+
+```sh
+sudo install -o root -g root -m 0755 \
+  scripts/add-caddy-host /usr/local/sbin/add-caddy-host
+```
+
+Add an HTTP service:
+
+```sh
+sudo add-caddy-host app.hatbat.net http://192.168.68.20:8080
+```
+
+For an HTTPS upstream with a self-signed or otherwise untrusted certificate,
+the verification bypass must be requested explicitly:
+
+```sh
+sudo add-caddy-host --insecure-upstream-tls \
+  admin.hatbat.net https://192.168.68.30:8443
+```
+
+The command accepts only lowercase `hatbat.net` subdomains and RFC1918 IPv4
+upstreams with explicit ports. It probes the upstream, serializes operations
+with `flock`, creates root-only backups in `/var/backups/caddy-hosts`, writes a
+dedicated file under `/etc/caddy/sites-enabled`, adds the hostname to
+`CF_ALIASES`, updates Cloudflare DNS, validates and reloads Caddy, and performs
+a local HTTPS check. Configuration changes are rolled back if validation, DNS
+update, or reload fails. Use `--force` only to replace an existing host file
+after inspecting it.
+
 ## Verification
 
 Run the local fake-root test suite:
 
 ```sh
-bash -n setup.sh tests/test_setup.sh
+bash -n setup.sh tests/test_setup.sh scripts/add-caddy-host
 bash tests/test_setup.sh
 ```
 
