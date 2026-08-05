@@ -149,6 +149,26 @@ done
 mkdir -p "$output_dir/x"
 cp "$source_file" "$output_dir/x/xterm-ghostty"
 EOF
+    cat > "$BIN/infocmp" <<'EOF'
+#!/usr/bin/env bash
+printf 'infocmp %s\n' "$*" >> "$TEST_CALLS"
+printf '#\tReconstructed via infocmp\n'
+printf 'ghostty|Ghostty,\n'
+printf '\tam, bce,\n'
+EOF
+    cat > "$BIN/sed" <<'EOF'
+#!/usr/bin/env bash
+printf 'sed %s\n' "$*" >> "$TEST_CALLS"
+replacement=
+for arg in "$@"; do
+    case "$arg" in
+        2c\\*)
+            replacement=${arg#2c\\}
+            ;;
+    esac
+done
+awk -v replacement="$replacement" 'NR == 2 && replacement != "" { print replacement; next } { print }'
+EOF
     cat > "$BIN/chown" <<'EOF'
 #!/usr/bin/env bash
 printf 'chown %s\n' "$*" >> "$TEST_CALLS"
@@ -206,6 +226,7 @@ test_dry_run_is_non_mutating() {
     TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" PATH="$BIN:$PATH" SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" "$SETUP_SCRIPT" --dry-run
     assert_file_not_exists "$ROOT/etc/sudoers.d/rog"
     assert_file_not_exists "$ROOT/etc/sudoers.d/rog-nopasswd"
+    assert_file_not_exists "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
     assert_file_not_exists "$ROOT/home/rog/AGENTS.md"
     [[ ! -s "$FIXTURE/calls" ]] || fail 'dry-run executed mutating commands'
     rm -rf "$FIXTURE"
@@ -224,6 +245,9 @@ test_setup_is_idempotent() {
     assert_contains 'rog ALL=(ALL:ALL) ALL' "$ROOT/etc/sudoers.d/rog"
     assert_file_exists "$ROOT/etc/sudoers.d/rog-nopasswd"
     assert_count 1 'rog ALL=(ALL:ALL) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl status *, /usr/bin/journalctl, /usr/bin/pvesh get *, /usr/sbin/pct list, /usr/sbin/qm list' "$ROOT/etc/sudoers.d/rog-nopasswd"
+    assert_file_exists "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
+    assert_contains 'xterm-ghostty|ghostty|Ghostty terminal emulator,' "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
+    assert_count 1 "tic -o $ROOT/home/rog/.terminfo" "$FIXTURE/calls"
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
     assert_contains 'PubkeyAuthentication yes' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"

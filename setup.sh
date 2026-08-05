@@ -300,6 +300,31 @@ EOF
     chown root:root "$sudoers_file"
 }
 
+install_rog_terminfo_alias() {
+    local terminfo_dir entry tmp
+    terminfo_dir=$(root_path /home/rog/.terminfo)
+    entry="$terminfo_dir/x/xterm-ghostty"
+    if [[ -e "$entry" ]]; then
+        log 'rog-local xterm-ghostty terminfo already installed'
+        return
+    fi
+    if ((DRY_RUN)); then
+        log 'would install rog-local xterm-ghostty terminfo alias'
+        return
+    fi
+    command -v tic >/dev/null 2>&1 || die 'tic is unavailable for the rog terminfo alias'
+    command -v infocmp >/dev/null 2>&1 || die 'infocmp is unavailable for the rog terminfo alias'
+    infocmp ghostty >/dev/null 2>&1 || die "the 'ghostty' terminfo entry is missing; install ncurses-term"
+    tmp=$(mktemp "$(root_path /tmp)/tob-lxc-setup.terminfo.XXXXXX")
+    trap 'rm -f -- "$tmp"; cleanup' RETURN
+    infocmp ghostty | sed '2c\xterm-ghostty|ghostty|Ghostty terminal emulator,' > "$tmp"
+    run mkdir -p "$terminfo_dir"
+    run tic -o "$terminfo_dir" "$tmp"
+    run chown -R rog:rog "$terminfo_dir"
+    rm -f -- "$tmp"
+    trap - RETURN
+}
+
 valid_key_line() {
     local key_type key_data rest
     IFS=' ' read -r key_type key_data rest <<< "$1"
@@ -430,6 +455,7 @@ main() {
     install_codex
     install_opencode
     configure_user
+    install_rog_terminfo_alias
     configure_sudo
     install_sudo_nopasswd
     if ((DRY_RUN)); then
