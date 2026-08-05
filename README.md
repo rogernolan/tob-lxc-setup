@@ -21,13 +21,16 @@ The apt packages are:
 
 If `npm` is not already available, the package manager installs it separately; its package dependencies provide a compatible Node.js runtime.
 
-The script also installs the OpenAI Codex CLI globally with npm:
+The script also installs the OpenAI Codex CLI and the OpenCode CLI globally with npm:
 
 ```sh
 npm install --global @openai/codex
+npm install --global opencode-ai
 ```
 
 After setup, run `codex` as `rog` and complete the interactive sign-in flow. See the [Codex CLI documentation](https://developers.openai.com/codex/cli/) for current authentication and usage details.
+
+Run `opencode` as `rog` and use the `/connect` command to configure an LLM provider. See the [OpenCode documentation](https://opencode.ai/docs/) for authentication and usage details.
 
 Ghostty's `xterm-ghostty` definition is compiled with `tic -x` into `/usr/share/terminfo`, making it available to all users and commands run through `sudo`.
 

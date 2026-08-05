@@ -219,6 +219,18 @@ install_codex() {
     codex --version >/dev/null || die 'Codex command failed its version check'
 }
 
+install_opencode() {
+    if command -v opencode >/dev/null 2>&1; then
+        log 'OpenCode CLI already installed'
+        return
+    fi
+    log 'installing OpenCode CLI from npm'
+    run npm install --global opencode-ai
+    ((DRY_RUN)) && return
+    command -v opencode >/dev/null 2>&1 || die 'OpenCode installation completed without a usable opencode command'
+    opencode --version >/dev/null || die 'OpenCode command failed its version check'
+}
+
 user_exists() {
     grep -q '^rog:' "$(root_path /etc/passwd)"
 }
@@ -393,6 +405,7 @@ main() {
     install_ghostty_terminfo
     configure_locale
     install_codex
+    install_opencode
     configure_user
     configure_sudo
     if ((DRY_RUN)); then

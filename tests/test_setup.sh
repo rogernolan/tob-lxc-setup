@@ -54,11 +54,23 @@ if [[ "$*" == 'install -y --no-install-recommends npm' ]]; then
     cat > "$TEST_BIN/npm" <<'NPM'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$TEST_CALLS"
-cat > "$TEST_BIN/codex" <<'CODEX'
+pkg="${!#}"
+case "$pkg" in
+    @openai/codex)
+        cat > "$TEST_BIN/codex" <<'CODEX'
 #!/usr/bin/env bash
 printf 'codex-cli test-version\n'
 CODEX
-chmod +x "$TEST_BIN/codex"
+        chmod +x "$TEST_BIN/codex"
+        ;;
+    opencode-ai)
+        cat > "$TEST_BIN/opencode" <<'OPENCODE'
+#!/usr/bin/env bash
+printf 'opencode test-version\n'
+OPENCODE
+        chmod +x "$TEST_BIN/opencode"
+        ;;
+esac
 NPM
     chmod +x "$TEST_BIN/npm"
 fi
@@ -66,11 +78,23 @@ EOF
     cat > "$BIN/npm" <<'EOF'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$TEST_CALLS"
-cat > "$TEST_BIN/codex" <<'CODEX'
+pkg="${!#}"
+case "$pkg" in
+    @openai/codex)
+        cat > "$TEST_BIN/codex" <<'CODEX'
 #!/usr/bin/env bash
 printf 'codex-cli test-version\n'
 CODEX
-chmod +x "$TEST_BIN/codex"
+        chmod +x "$TEST_BIN/codex"
+        ;;
+    opencode-ai)
+        cat > "$TEST_BIN/opencode" <<'OPENCODE'
+#!/usr/bin/env bash
+printf 'opencode test-version\n'
+OPENCODE
+        chmod +x "$TEST_BIN/opencode"
+        ;;
+esac
 EOF
     cat > "$BIN/useradd" <<'EOF'
 #!/usr/bin/env bash
@@ -220,6 +244,7 @@ test_setup_is_idempotent() {
     assert_contains 'locale-gen en_GB.UTF-8' "$FIXTURE/calls"
     assert_contains 'en_GB.UTF-8 UTF-8' "$ROOT/etc/locale.gen"
     assert_contains 'npm install --global @openai/codex' "$FIXTURE/calls"
+    assert_contains 'npm install --global opencode-ai' "$FIXTURE/calls"
     assert_count 1 'usermod --append --groups sudo rog' "$FIXTURE/calls"
     assert_contains 'ACTION REQUIRED: set a password for rog with: passwd rog' "$FIXTURE/output"
     [[ "$(tail -n 1 "$FIXTURE/output")" == 'INFO: ACTION REQUIRED: set a password for rog with: passwd rog' ]] || fail 'password reminder was not the final line'
