@@ -205,6 +205,7 @@ test_dry_run_is_non_mutating() {
     make_fixture
     TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" PATH="$BIN:$PATH" SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" "$SETUP_SCRIPT" --dry-run
     assert_file_not_exists "$ROOT/etc/sudoers.d/rog"
+    assert_file_not_exists "$ROOT/etc/sudoers.d/rog-nopasswd"
     assert_file_not_exists "$ROOT/home/rog/AGENTS.md"
     [[ ! -s "$FIXTURE/calls" ]] || fail 'dry-run executed mutating commands'
     rm -rf "$FIXTURE"
@@ -221,6 +222,8 @@ test_setup_is_idempotent() {
 
     assert_file_exists "$ROOT/etc/sudoers.d/rog"
     assert_contains 'rog ALL=(ALL:ALL) ALL' "$ROOT/etc/sudoers.d/rog"
+    assert_file_exists "$ROOT/etc/sudoers.d/rog-nopasswd"
+    assert_count 1 'rog ALL=(ALL:ALL) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl status *, /usr/bin/journalctl, /usr/bin/pvesh get *, /usr/sbin/pct list, /usr/sbin/qm list' "$ROOT/etc/sudoers.d/rog-nopasswd"
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
     assert_contains 'PubkeyAuthentication yes' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
