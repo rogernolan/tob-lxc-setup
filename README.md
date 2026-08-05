@@ -2,7 +2,7 @@
 
 Small, repeatable setup for Debian and Ubuntu LXC guests on Proxmox.
 
-The script installs common administration tools, installs the `xterm-ghostty` terminfo entry system-wide, creates the `rog` administrator account, configures sudo, installs Rog's public GitHub SSH keys, adds `/home/rog/AGENTS.md`, and enables SSH/Avahi when systemd is active.
+The script installs common administration tools, installs the `xterm-ghostty` terminfo entry system-wide, creates the `rog` administrator account, configures sudo, installs Rog's public GitHub SSH keys, adds `/home/rog/AGENTS.md`, and enables SSH/Avahi when systemd is active. It also grants `rog` passwordless sudo for a small set of low-risk sysadmin commands; everything else still requires the password.
 
 ## Supported hosts
 
@@ -31,6 +31,16 @@ npm install --global opencode-ai
 After setup, run `codex` as `rog` and complete the interactive sign-in flow. See the [Codex CLI documentation](https://developers.openai.com/codex/cli/) for current authentication and usage details.
 
 Run `opencode` as `rog` and use the `/connect` command to configure an LLM provider. See the [OpenCode documentation](https://opencode.ai/docs/) for authentication and usage details.
+
+## Passwordless sudo
+
+The `rog` account can run a small set of sysadmin commands with `sudo` without a password:
+
+- `systemctl start`, `systemctl stop`, `systemctl restart`, and `systemctl status` for any unit.
+- `journalctl` for system logs.
+- `pvesh get`, `pct list`, and `qm list` when the Proxmox host tools are available.
+
+The rules live in `/etc/sudoers.d/rog-nopasswd`, validated with `visudo` and installed with mode `0440`, so every other command still requires `rog`'s password through the base `ALL` rule. `systemctl` is whitelisted per subcommand, never as bare `systemctl`. The Proxmox tools (`pvesh`, `pct`, `qm`) are host commands; on guests where they are absent the corresponding rules simply never match.
 
 Ghostty's `xterm-ghostty` definition is compiled with `tic -x` into `/usr/share/terminfo`, making it available to all users and commands run through `sudo`.
 
@@ -93,6 +103,7 @@ Options:
 - Package upgrades can restart services or change system behavior. Run the script during a suitable maintenance window.
 - `en_GB.UTF-8` is generated so SSH sessions that request that locale do not produce Bash warnings; existing `LANG` and locale policy are otherwise preserved.
 - Repeat runs are expected and should converge without duplicate users, group membership, SSH keys, or guidance files.
+- Passwordless sudo is limited to `systemctl start/stop/restart/status`, `journalctl`, `pvesh get`, `pct list`, and `qm list`, in a separate `visudo`-validated `/etc/sudoers.d/rog-nopasswd` file with mode `0440`. All other commands require `rog`'s password via the base `ALL` rule.
 
 ## Caddy host manager
 
