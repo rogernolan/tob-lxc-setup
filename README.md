@@ -121,25 +121,49 @@ The gateway must provide:
 - `/usr/local/sbin/cloudflare-ddns`;
 - working Caddy and systemd services.
 
-Install the command:
+The normal remote workflow installs the command and then invokes the installed
+copy. For a review-first workflow, download both scripts, inspect them, and
+run the installer as root:
 
 ```sh
-sudo install -o root -g root -m 0755 \
-  scripts/add-caddy-host /usr/local/sbin/add-caddy-host
+wget -qO /tmp/install-caddy-host.sh \
+  https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/install-caddy-host
+wget -qO /tmp/add-caddy-host.sh \
+  https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/add-caddy-host
+less /tmp/install-caddy-host.sh
+less /tmp/add-caddy-host.sh
+sudo sh /tmp/install-caddy-host.sh \
+  app.hatbat.net http://192.168.68.20:8080
+rm -f /tmp/install-caddy-host.sh /tmp/add-caddy-host.sh
 ```
 
-Add an HTTP service:
+For the usual install-and-run path, stream only the installer. It downloads
+and installs `/usr/local/sbin/add-caddy-host` before invoking it:
 
 ```sh
-sudo add-caddy-host app.hatbat.net http://192.168.68.20:8080
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/install-caddy-host \
+  | sudo sh -s -- app.hatbat.net http://192.168.68.20:8080
 ```
 
 For an HTTPS upstream with a self-signed or otherwise untrusted certificate,
 the verification bypass must be requested explicitly:
 
 ```sh
-sudo add-caddy-host --insecure-upstream-tls \
-  admin.hatbat.net https://192.168.68.30:8443
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/install-caddy-host \
+  | sudo sh -s -- --insecure-upstream-tls \
+    admin.hatbat.net https://192.168.68.30:8443
+```
+
+If the remote command needs to change, or for a temporary one-off operation,
+the command can instead be invoked directly without installing it. This is a
+fallback path and does not update `/usr/local/sbin/add-caddy-host`:
+
+```sh
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/add-caddy-host \
+  | sudo sh -s -- app.hatbat.net http://192.168.68.20:8080
 ```
 
 The command accepts only lowercase `hatbat.net` subdomains and RFC1918 IPv4
@@ -156,8 +180,10 @@ after inspecting it.
 Run the local fake-root test suite:
 
 ```sh
-bash -n setup.sh tests/test_setup.sh scripts/add-caddy-host
+bash -n setup.sh tests/test_setup.sh
+sh -n scripts/add-caddy-host scripts/install-caddy-host
 bash tests/test_setup.sh
+bash tests/test_caddy_remote.sh
 ```
 
 The tests do not modify the development machine or require a live LXC.
