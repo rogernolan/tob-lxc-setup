@@ -25,6 +25,10 @@ assert_file_equals() {
 	[[ "$(cat "$1")" == "$2" ]] || fail "unexpected content in $1"
 }
 
+assert_file_not_exists() {
+	[[ ! -e "$1" ]] || fail "did not expect file: $1"
+}
+
 cat > "$BIN/id" <<'EOF'
 #!/usr/bin/env bash
 [[ "$1" == "-u" ]] && printf '0\n' || exit 1
@@ -103,6 +107,22 @@ app.hatbat.net
 http://192.168.68.20:8080'
 }
 
+test_reviewed_local_payload_is_installed_without_redownload() {
+	local installer="$FIXTURE/install-local.sh"
+	cat > "$PAYLOAD" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "$TEST_ARGS"
+EOF
+	rm -f "$FIXTURE/curl.log"
+	make_test_installer "$installer"
+	TEST_ARGS="$FIXTURE/args" run_installer "$installer" --payload-file "$PAYLOAD" \
+		app.hatbat.net http://192.168.68.20:8080
+	assert_file_not_exists "$FIXTURE/curl.log"
+	assert_file_equals "$FIXTURE/args" 'app.hatbat.net
+http://192.168.68.20:8080'
+}
+
 test_invalid_payload_preserves_existing_command() {
 	local installer="$FIXTURE/install-invalid.sh"
 	printf 'OLD-CONTENT\n' > "$DESTINATION"
@@ -126,6 +146,7 @@ test_download_failure_preserves_existing_command() {
 }
 
 test_successful_install_forwards_arguments
+test_reviewed_local_payload_is_installed_without_redownload
 test_invalid_payload_preserves_existing_command
 test_download_failure_preserves_existing_command
 printf 'PASS: caddy remote installer tests\n'

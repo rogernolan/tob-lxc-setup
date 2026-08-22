@@ -133,9 +133,14 @@ wget -qO /tmp/add-caddy-host.sh \
 less /tmp/install-caddy-host.sh
 less /tmp/add-caddy-host.sh
 sudo sh /tmp/install-caddy-host.sh \
+  --payload-file /tmp/add-caddy-host.sh -- \
   app.hatbat.net http://192.168.68.20:8080
 rm -f /tmp/install-caddy-host.sh /tmp/add-caddy-host.sh
 ```
+
+The `--payload-file` option makes the installer use the inspected local copy
+instead of downloading the payload again. The `--` separates installer options
+from arguments passed to `add-caddy-host`.
 
 For the usual install-and-run path, stream only the installer. It downloads
 and installs `/usr/local/sbin/add-caddy-host` before invoking it:
