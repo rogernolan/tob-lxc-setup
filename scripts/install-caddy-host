@@ -1,0 +1,65 @@
+#!/bin/sh
+set -eu
+
+program=${0##*/}
+destination=/usr/local/sbin/add-caddy-host
+payload_url=${CADDY_HOST_PAYLOAD_URL:-https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/add-caddy-host}
+payload_file=
+payload_tmp=
+installed_tmp=
+
+fail() {
+	printf '%s: %s\n' "$program" "$*" >&2
+	exit 1
+}
+
+cleanup() {
+	[ -z "$payload_tmp" ] || rm -f -- "$payload_tmp"
+	[ -z "$installed_tmp" ] || rm -f -- "$installed_tmp"
+}
+trap cleanup EXIT HUP INT TERM
+
+[ "$(id -u)" -eq 0 ] || fail "run as root (for example: sudo sh -s -- ...)"
+command -v curl >/dev/null 2>&1 || fail "curl is required"
+command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
+command -v install >/dev/null 2>&1 || fail "install is required"
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--payload-file)
+			[ "$#" -ge 2 ] || fail "--payload-file requires a path"
+			payload_file=$2
+			shift 2
+			;;
+		--)
+			shift
+			break
+			;;
+		*)
+			break
+			;;
+	esac
+done
+
+payload_tmp=$(mktemp "${TMPDIR:-/tmp}/install-caddy-host.XXXXXX")
+if [ -n "$payload_file" ]; then
+	[ -r "$payload_file" ] || fail "payload file is not readable: $payload_file"
+	cat -- "$payload_file" >"$payload_tmp" || fail "could not read payload file"
+else
+	curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+		"$payload_url" >"$payload_tmp" ||
+		fail "could not download add-caddy-host"
+fi
+
+head -n 1 "$payload_tmp" | grep -Fqx '#!/bin/sh' ||
+	fail "downloaded payload is not the expected POSIX shell script"
+grep -Fqx 'set -eu' "$payload_tmp" ||
+	fail "downloaded payload failed validation"
+
+install -d -o root -g root -m 0755 "$(dirname "$destination")"
+installed_tmp=$(mktemp "$(dirname "$destination")/.add-caddy-host.XXXXXX")
+install -o root -g root -m 0755 "$payload_tmp" "$installed_tmp"
+mv -f -- "$installed_tmp" "$destination"
+installed_tmp=
+
+exec "$destination" "$@"
