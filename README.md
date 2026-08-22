@@ -50,9 +50,7 @@ Review-first workflow:
 
 ```sh
 wget -qO /tmp/tob-lxc-setup.sh https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/setup.sh
-less /tmp/tob-lxc-setup.sh
 bash /tmp/tob-lxc-setup.sh --github-user rogernolan
-rm -f /tmp/tob-lxc-setup.sh
 ```
 
 Convenience one-liner for a trusted homelab host:
@@ -130,12 +128,9 @@ wget -qO /tmp/install-caddy-host.sh \
   https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/install-caddy-host
 wget -qO /tmp/add-caddy-host.sh \
   https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/add-caddy-host
-less /tmp/install-caddy-host.sh
-less /tmp/add-caddy-host.sh
 sudo sh /tmp/install-caddy-host.sh \
   --payload-file /tmp/add-caddy-host.sh -- \
   app.hatbat.net http://192.168.68.20:8080
-rm -f /tmp/install-caddy-host.sh /tmp/add-caddy-host.sh
 ```
 
 The `--payload-file` option makes the installer use the inspected local copy
