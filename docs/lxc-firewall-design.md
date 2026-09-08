@@ -172,15 +172,32 @@ Proxmox watches live firewall configuration and applies it automatically.
 Writing the live file and then running `pve-firewall compile` is not a safe
 pre-validation mechanism for an already-enabled guest.
 
-Before implementing live apply, verify a way to parse and compile the proposed
-complete configuration using the installed native compiler in isolation from
-the live watched files. This is an implementation prerequisite, not permission
-to assume a nonexistent CLI option. Record the supported mechanism and version
-evidence in the implementation documentation. If no safe mechanism can be
-verified, refuse live mutation and report the limitation. Never stop the
-host-wide firewall or temporarily disable guest enforcement to validate.
+Prefer validating the proposed complete configuration with the installed
+native compiler outside the live watched files, where a suitable mechanism
+exists. Do not assume Proxmox provides a command to validate an arbitrary
+candidate file in its full intended context.
 
-The apply sequence is:
+An alternative strategy is acceptable if it demonstrates that no new or
+changed restrictive policy can become active until the candidate has been
+validated. Existing active protection must remain in place during validation;
+do not stop the host-wide firewall or temporarily disable existing guest
+enforcement. The safety argument must cover both first-time enablement and
+updates to an already-protected guest, including automatic firewall reloads,
+partial failures and interruption between steps.
+
+Record the mechanism, installed-version evidence, activation barrier and
+failure behaviour in the implementation documentation. Validate the candidate
+that will actually be activated, with its intended enabled state and relevant
+configuration context; successfully compiling a disabled configuration is not
+enough if the compiler skips the candidate rules. Prove the ordering with
+tests, including a deliberately invalid candidate that never becomes active.
+If neither the preferred nor an alternative strategy can meet these guarantees,
+leave the live configuration unchanged and report the limitation.
+
+The preferred apply sequence is below. If an alternative requires live staging
+during validation, perform the state recheck and durable backup in steps 4–5
+before that staging, and recheck the expected state again before activation.
+Document its exact sequence and recovery points.
 
 1. Validate arguments, root privileges, host identity, local LXC identity,
    network support, backend/service state, Datacenter enablement, and writable
@@ -188,8 +205,11 @@ The apply sequence is:
    without trying to repair unrelated configuration.
 2. Serialize invocations with a host-local lock. Capture the guest firewall
    file, its original presence/absence, and the complete selected NIC property.
-3. Generate the deterministic candidate outside the watched configuration.
-   Validate the candidate in the relevant complete configuration context,
+3. Generate the deterministic candidate and validate it using the preferred
+   isolated mechanism or a demonstrated safe alternative described above.
+   Any staging in watched configuration must be proven unable to activate the
+   unvalidated candidate or disturb existing protection. Validate the candidate
+   in the relevant complete configuration context,
    including the intended NIC firewall state. A successful exit alone is not
    sufficient if the native parser reports errors while returning success;
    verify its diagnostics contract with malformed fixtures.
@@ -214,8 +234,11 @@ The apply sequence is:
    the conflict. On rollback failure, return nonzero with exact recovery paths
    and instructions. A later run detects incomplete transactions.
 
-Validation failure leaves the live files and NIC untouched. Apply failure
-triggers recovery, but the operation spans separate Proxmox objects and is not
+With isolated validation, validation failure leaves the live files and NIC
+untouched. An alternative involving live staging must leave active protection
+unchanged and restore the original staged configuration on validation failure,
+with recovery information retained for an interrupted or failed restoration.
+Apply failure triggers recovery, but the operation spans separate Proxmox objects and is not
 an atomic transaction: transient policy changes and uncatchable interruptions
 cannot be ruled out. Document this limit instead of promising uninterrupted
 connectivity. Do not flush conntrack or reboot automatically during apply.
