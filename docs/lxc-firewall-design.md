@@ -41,12 +41,20 @@ published through Caddy. Authentication enforced only by Caddy does not protect
 direct application access; applications requiring authentication must account
 for that access path.
 
-Default trusted service sources are `192.168.68.0/22` and IPv6 link-local
-`fe80::/10` on the guest's single interface. The IPv6 link-local allowance is a
-design default to support local name-based access. Do not allow all IPv6 sources
-or infer a trusted routed IPv6 prefix. Routed/global IPv6 service access requires
-a future explicit source-policy extension. Verify the addresses actually used
-by `.local` clients during testing; do not claim arbitrary AAAA records work.
+The v1 trusted service source is IPv4 `192.168.68.0/22` only. Do not include
+`fe80::/10` as a blanket trusted source for SSH, SMB or application ports.
+The Mac's use of link-local IPv6 to reach the Proxmox host does not establish
+how guest `.local` connections behave.
+
+Record guest name-resolution results and actual connection addresses in the
+105 tests. IPv6 link-local service access may be added only where those tests
+demonstrate it is required, scoped to the specific service, source and interface
+needed, with the evidence and rule documented. An IPv6 address in an mDNS answer
+alone is not sufficient evidence. The tool must not automatically broaden
+service rules in response to discovery results or a failed connection.
+Routed/global IPv6 service access requires a future explicit source-policy
+extension. Until a justified exception is defined, restrictive profiles allow
+no unsolicited inbound IPv6 service connections.
 
 ## Command and profiles
 
@@ -126,7 +134,10 @@ command does not install, start, or reconfigure Avahi.
 Permit LAN mDNS using UDP 5353, with IPv4 multicast destination `224.0.0.251`
 and IPv6 link-local multicast destination `ff02::fb`. Account for required
 unicast mDNS exchanges as well; avoid a multicast-only rule set that resolves
-names inconsistently. Scope source allowances to the trusted local sources.
+names inconsistently. Scope IPv4 discovery sources to `192.168.68.0/22` and
+IPv6 discovery to the local link with protocol-specific rules verified on 105.
+Any IPv6 mDNS or network-control exception is separate from service access:
+it must not make its source a trusted source for SSH, SMB or application ports.
 Do not add a multicast reflector or promise `.local` discovery over Tailscale.
 
 Inspect static/DHCP addressing and preserve required DHCP, IPv6 neighbour
@@ -248,6 +259,11 @@ validation, live-file publication, NIC update, post-apply validation, rollback,
 interruption recovery and concurrent state changes. Assert unrelated host,
 Datacenter, NIC and guest configurations are unchanged.
 
+For every restrictive profile, assert that default service allow rules use
+only `192.168.68.0/22` and that mDNS/control exceptions do not admit unsolicited
+IPv6 TCP service traffic. If a 105-proven IPv6 service exception is subsequently
+added, test its exact scope and verify that unrelated services remain blocked.
+
 For `lan-smb`, automated rule tests must verify that TCP 445 and TCP 22 are
 allowed only from the configured trusted sources and that no generated rule
 or expanded macro permits TCP/UDP 137–139 or UDP 445. Verify this for fresh
@@ -262,7 +278,11 @@ procedure and exact dry-run output. Stop on identity or configuration mismatch.
 Apply `ssh-only` and verify:
 
 1. Fresh direct LAN SSH succeeds, including a fresh `.local` resolution and
-   connection. Record which IPv4/IPv6 address the client used.
+   connection. Record A/AAAA answers and actual source/destination addresses.
+   Test with the default IPv4-only service policy first. If ordinary `.local`
+   access fails, distinguish resolution, client address selection and service
+   reachability before proposing a service-specific IPv6 exception. Record
+   IPv4-forced access separately; it does not prove ordinary `.local` works.
 2. Fresh SSH through the gateway/Tailscale subnet route succeeds; verify its
    observed source address. Existing SSH sessions are not evidence.
 3. A temporary TCP listener proved reachable before the change becomes
@@ -272,6 +292,12 @@ Apply `ssh-only` and verify:
 4. Guest DNS and HTTPS work; inspect relevant IPv4/IPv6 active rules.
 5. An identical rerun makes no changes and the native compiler has no errors.
 6. Restart only 105 and repeat the reachability/discovery checks.
+
+Where 105 has usable IPv6 connectivity, verify that fresh IPv6 connections to
+SSH and listening test service ports remain blocked under the default policy,
+while required local discovery/control traffic still works. Confirm listeners
+and the IPv6 path before attributing failure to filtering. If IPv6 cannot be
+exercised, record this as not tested and retain IPv4-only service access.
 
 On 105, also test an `application` transition using a temporary listener,
 confirm its allowed port is reachable over LAN/Tailscale, then restore
