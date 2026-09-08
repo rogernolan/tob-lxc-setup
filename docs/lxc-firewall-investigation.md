@@ -110,3 +110,42 @@ sudo perl /tmp/tob-firewall-review.8nheDc/scripts/check-lxc-firewall 105
 Live-context validation, discovery, actual application/recovery and connection
 tests remain outstanding. This preflight still validates service candidates;
 it does not claim mDNS rules have been finalized.
+
+## Real-context preflight supplied by Rog
+
+Existing policy compiled with 0 IPv4/IPv6 guest inbound rules. ssh-only
+compiled with 5 IPv4 and 8 IPv6 inbound rules, application and lan-smb each
+with 6 IPv4 and 8 IPv6 inbound rules, unrestricted with zero in both families.
+All passed. These counts include native protocol rules; the IPv6 rules do
+not represent IPv6 service-port allowances.
+
+105 was started by Rog for baseline connectivity. Its name now resolves and
+SSH advertises an ED25519 key, but first-connection host-key verification is
+pending Rog's host-side fingerprint. No guest firewall has been applied yet.
+
+Implemented the apply adapter and transaction module. Local transaction tests
+cover failure and recovery paths; native verification now includes mDNS rule
+compilation and returned signatures (14 assertions). Exact live apply and
+connectivity checks remain pending.
+
+## Apply-path checkpoint
+
+Implemented `scripts/lxc-firewall-apply` and a pure transaction module, wired
+through the existing entry point. Current deployment remains restricted to
+105 / tob-test-lxc and pve-firewall 6.0.4. Validation uses actual context
+snapshots; publication uses Proxmox's native atomic file writer; NIC changes
+use pct. Running-guest convergence compares native PVE chain signatures in
+IPv4/IPv6 kernel rules and checks their bridge hooks. No update/reload service
+call or direct kernel rule mutation is used.
+
+28 local transaction assertions pass, plus preview and existing repository
+suites. Both Perl and shell syntax checks pass on Proxmox for the staged
+bundle. Native compiler tests pass 14 assertions including LAN mDNS and native
+signatures. Live apply, rollback on Proxmox and fresh-connection checks are
+still NOT RUN.
+
+The reviewed apply bundle is staged at:
+`/tmp/tob-firewall-apply.pI7HDH/scripts/` on tob-proxmox.
+Next steps: obtain 105's SSH fingerprint, capture exact live dry-run, verify
+baseline discovery/SSH/outbound connectivity, then apply and test with the
+recorded host-side recovery command available.

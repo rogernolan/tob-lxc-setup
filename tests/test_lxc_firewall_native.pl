@@ -19,7 +19,7 @@ sub invoke {
 }
 my $count = 0;
 sub check { my ($ok, $message) = @_; die "FAIL: $message\n" unless $ok; $count++; }
-write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22\nIN ACCEPT -source 192.168.68.0/22 -p tcp -dport 445\n");
+write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22\nIN ACCEPT -source 192.168.68.0/22 -p tcp -dport 445\nIN ACCEPT -source 192.168.68.0/22 -p udp -dport 5353\n");
 my ($status, $out) = invoke();
 check($status == 0, 'valid policy must compile');
 my $rules = decode_json($out);
@@ -28,6 +28,8 @@ my $v6 = join("\n", @{$rules->{ipv6}});
 check($v4 =~ /-s 192\.168\.68\.0\/22 .*--dport 445 .*ACCEPT/, 'scoped SMB allow compiled');
 check(index($v4, '--dport 445') < index($v4, '-j PVEFW-Drop'), 'SMB allow precedes default drop');
 check($v4 =~ /--dport 68 .*ACCEPT/, 'DHCP response preserved');
+check($v4 =~ /-s 192\.168\.68\.0\/22 .*--dport 5353 .*ACCEPT/, 'LAN mDNS allowance compiles');
+check($rules->{signatures}->{ipv4}->{'veth105i0-IN'}, 'native chain signature returned');
 check($v6 !~ /--dport (22|445)\b/, 'no IPv6 service allowance');
 for my $bad ('IN ACCEPT -p tcp -dport 999999', 'IN ACCEPT -source nonsense -p tcp -dport 22', 'IN ACCEPT -p tcp -dport 22 garbage', 'not a rule') {
     write_file('105.fw', $prefix . "$bad\n");

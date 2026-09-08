@@ -180,6 +180,96 @@ a local HTTPS check. Configuration changes are rolled back if validation, DNS
 update, or reload fails. Use `--force` only to replace an existing host file
 after inspecting it.
 
+## Proxmox LXC firewall (initial test release)
+
+`setup.sh` configures the OS inside a guest. The separate
+`scripts/configure-lxc-firewall` command runs **as root on Proxmox** and manages
+native guest firewall policy. Caddy publication remains independent.
+
+Current live-apply scope is deliberately restricted to **105 / tob-test-lxc**
+and the verified `pve-firewall` package version **6.0.4**. Other guests can be
+previewed, but applying to production guests is not enabled in this release.
+The native validator and local failure tests pass; live connectivity testing
+is still pending.
+
+Run from a reviewed copy of this repository on the Proxmox host. Keep the
+`scripts/` directory and its `lib/` subdirectory together; the entry point
+uses its adjacent Perl helpers and Proxmox's installed Perl libraries.
+
+```sh
+sudo bash scripts/configure-lxc-firewall 105 ssh-only --dry-run
+sudo bash scripts/configure-lxc-firewall 105 ssh-only
+sudo bash scripts/configure-lxc-firewall 105 application --port 8080 --port 9090 --dry-run
+```
+
+| Profile | Allowed service ports from `192.168.68.0/22` |
+| --- | --- |
+| `ssh-only` | TCP 22 |
+| `application` | TCP 22 plus required `--port` values |
+| `lan-smb` | TCP 22 and direct SMB TCP 445 |
+| `unrestricted` | Guest enforcement disabled; no inbound isolation |
+
+LAN clients and Tailscale connections SNATed through `192.168.68.71` share
+this access tier. Applications may also be published through Caddy on that
+gateway, without changing guest firewall rules. Direct clients bypass controls
+provided solely by Caddy, so application authentication must account for them.
+No IPv6 SSH/application/SMB source is trusted by default.
+
+Restrictive profiles use inbound DROP, outbound ACCEPT, native DHCP support
+and a LAN UDP 5353 allowance for local name resolution. Ordinary `.local`
+access must be verified on 105 before rollout; discovery over Tailscale is not
+promised. The command does not change Avahi, Samba or Caddy configuration.
+`lan-smb` is for direct SMB2/SMB3 access by name/address, not NetBIOS browsing.
+It opens no TCP/UDP 137–139 or UDP 445 ports. Samba itself must disable SMB1;
+a port rule cannot enforce its negotiated protocol version.
+
+Dry-run renders the proposal without writes or native validation. Apply takes
+a private snapshot, compiles the existing and proposed configurations outside
+`/etc/pve`, and treats native parser warnings as errors. Only a validated
+candidate is published. For a running guest, it waits for Proxmox's IPv4 and
+IPv6 guest-chain signatures to match. A stopped guest remains stopped and is
+reported as configured with runtime verification pending.
+
+Only single-NIC bridged guests are supported. The full NIC configuration is
+preserved, changing only its firewall flag when needed. Unmarked guest firewall
+files and unknown managed versions are refused. The tool owns the complete
+marked file; manual edits to it will be replaced on a later apply. No generic
+force/adoption option is provided.
+
+Application failures attempt to restore the prior policy and NIC configuration.
+Private recovery state is retained under `/var/backups/tob-lxc-firewall/105/`.
+`previous.json` holds the last successful operation's prior state;
+`pending.json` means recovery is unresolved and blocks another apply. Concurrent
+GUI/API edits are unsupported; detected external changes are not overwritten.
+No changes are made to host/Datacenter policies or generated kernel chains.
+
+### Inspection and recovery for the initial test guest
+
+Inspect from Proxmox:
+
+```sh
+sudo pct config 105
+sudo cat /etc/pve/firewall/105.fw
+sudo pve-firewall status
+```
+
+Before applying, retain a copy of 105's current configuration and review the
+recovery snapshot. For the **specific NIC configuration captured during this
+work**, emergency network recovery is:
+
+```sh
+sudo pct set 105 --net0 'name=eth0,bridge=vmbr0,firewall=0,hwaddr=BC:24:11:68:9F:3B,ip=dhcp,type=veth'
+```
+
+This deliberately disables guest NIC isolation. Recheck the NIC first if it
+has changed; do not reuse that command for another guest. The original state
+had `firewall=1` and no guest policy file. Restore the exact original state or
+the recorded prior policy after diagnosing the failure. Do not simply delete
+`pending.json` and rerun: inspect its `before`/`desired` data and reconcile the
+actual configuration first. Never stop the host-wide firewall for guest
+recovery. Host-side `pct exec 105 -- ...` remains available if guest networking
+is lost.
+
 ## Verification
 
 Run the local fake-root test suite:
@@ -189,6 +279,19 @@ bash -n setup.sh tests/test_setup.sh
 sh -n scripts/add-caddy-host scripts/install-caddy-host
 bash tests/test_setup.sh
 bash tests/test_caddy_remote.sh
+bash tests/test_lxc_firewall.sh
+perl tests/test_lxc_firewall_transaction.pl
 ```
 
 The tests do not modify the development machine or require a live LXC.
+
+On Proxmox, the native compiler fixture test runs without sudo and only writes
+temporary files:
+
+```sh
+perl tests/test_lxc_firewall_native.pl scripts/lxc-firewall-validate
+```
+
+`sudo perl scripts/check-lxc-firewall 105` additionally validates candidate
+service policies against copies of the actual local configuration. It does
+not apply policy or start the guest.

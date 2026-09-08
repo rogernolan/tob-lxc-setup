@@ -50,12 +50,14 @@ contains 'NIC: net1'
 contains 'Current NIC firewall: 0'
 contains 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22'
 contains 'not natively validated'
+contains 'dhcp: 1'
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 5353'
 cp "$FIXTURE/out" "$FIXTURE/first"
 run 105 ssh-only --dry-run
 cmp -s "$FIXTURE/first" "$FIXTURE/out" || fail 'preview not deterministic'
 run 105 application --port 9090 --port 08080 --port 8080 --dry-run
 [[ $(grep -c -- '-dport 8080$' "$FIXTURE/out") = 1 ]] || fail 'duplicate ports'
-[[ $(grep -- '-dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'port ordering'
+[[ $(grep -- '-p tcp -dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'port ordering'
 run 105 lan-smb --dry-run
 contains '-dport 445'
 if grep -Eq -- '-dport (137|138|139)|fe80::|SMB\(' "$FIXTURE/out"; then fail 'overbroad SMB policy'; fi
@@ -85,6 +87,6 @@ cp -R "$FIXTURE/pve" "$FIXTURE/before"
 run 105 ssh-only --dry-run
 contains 'Existing policy: managed'
 diff -r "$FIXTURE/before" "$FIXTURE/pve" || fail 'dry-run changed state'
-reject 'apply is not yet available' 105 ssh-only
+reject 'apply helper is unavailable' 105 ssh-only
 diff -r "$FIXTURE/before" "$FIXTURE/pve" || fail 'unimplemented apply changed state'
 printf 'PASS: firewall preview tests\n'

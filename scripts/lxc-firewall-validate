@@ -25,7 +25,7 @@ my $guest = $data->{lxc}->{$vmid} // die "target LXC absent from snapshot\n";
 my @nics = grep { /^net[0-9]+$/ } keys %$guest;
 die "target requires exactly one selected NIC\n" unless @nics == 1 && $nics[0] eq $nic;
 my $net = PVE::LXC::Config->parse_lxc_network($guest->{$nic});
-die "snapshot requires the intended NIC firewall=1\n" unless $net->{firewall};
+# Baselines may have enforcement disabled; candidates use their intended flag.
 # Pre-read every required path: the native parser otherwise treats read failure
 # as an empty configuration, which must not result in a false positive.
 read_file("$dir/cluster.fw"); read_file("$dir/host.fw");
@@ -58,12 +58,22 @@ for my $family ([ipv4 => 0], [ipv6 => 2]) {
     die "missing native filter result\n" unless ref($filter) eq 'HASH';
     for my $direction ('IN', 'OUT') {
         my $entries = $filter->{"$chain-$direction"};
-        if ($target->{options}->{enable}) {
+        if ($target->{options}->{enable} && $net->{firewall}) {
             die "enabled candidate did not produce $name $direction chain\n" unless ref($entries) eq 'ARRAY' && @$entries;
         } else {
             die "disabled candidate unexpectedly produced guest chains\n" if $entries;
         }
         $result{$name . ($direction eq 'OUT' ? '_out' : '')} = $entries // [];
+    }
+}
+$result{chain} = $chain;
+$result{signatures} = {};
+for my $family ([ipv4 => 0], [ipv6 => 2]) {
+    my ($name, $index) = @$family;
+    for my $direction ('IN','OUT') {
+        my $entries = $rules[$index]->{filter}->{"$chain-$direction"};
+        $result{signatures}->{$name}->{"$chain-$direction"} =
+            $entries ? PVE::Firewall::iptables_chain_digest($entries) : undef;
     }
 }
 print JSON::PP->new->canonical->encode(\%result), "\n";

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Preview increment: activation remains unavailable until native validation is verified.
+# Host-side profile renderer and entry point. Native helpers perform validation/apply.
 set -Eeuo pipefail
 export LC_ALL=C
 pve_root=/etc/pve
 program=${0##*/}
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 marker='# Managed by tob-lxc-setup configure-lxc-firewall'
 ports=()
 dry_run=false
@@ -15,8 +16,8 @@ Profiles: ssh-only, application, lan-smb, unrestricted
 application requires one or more TCP --port values (1-65535).
 Trusted service source: 192.168.68.0/22 (LAN and SNATed Tailscale).
 Run on the Proxmox host as root. --help needs no host access.
-This development increment supports preview only. Native validation,
-discovery allowances and live application are not yet implemented.
+Live apply is currently limited to the disposable VMID 105.
+Dry-run renders only; application uses isolated native validation and recovery.
 EOF
 }
 parse_args() {
@@ -81,12 +82,12 @@ inspect_guest() {
 }
 render_policy() {
   printf '%s\n' "$marker" '# Format: 1' "# Profile: $profile"
-  printf '%s\n' '# Service-policy preview; discovery rules await verification on 105.' '[OPTIONS]'
+  printf '%s\n' '[OPTIONS]'
   if [[ $profile = unrestricted ]]; then
     printf '%s\n' 'enable: 0' 'policy_in: ACCEPT' 'policy_out: ACCEPT'
     return
   fi
-  printf '%s\n' 'enable: 1' 'policy_in: DROP' 'policy_out: ACCEPT' '[RULES]'
+  printf '%s\n' 'enable: 1' 'policy_in: DROP' 'policy_out: ACCEPT' 'dhcp: 1' '[RULES]'
   {
     printf '22\n'
     case "$profile" in
@@ -96,6 +97,7 @@ render_policy() {
   } | sort -nu | while IFS= read -r service_port; do
     printf 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport %s\n' "$service_port"
   done
+  printf '%s\n' 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 5353'
 }
 main() {
   parse_args "$@"
@@ -113,7 +115,11 @@ main() {
   fi
   printf 'Proposed file: %s\n' "$policy_file"
   render_policy
-  printf '\nPreview only: not natively validated; discovery rules are not finalized.\n'
-  [[ $dry_run = true ]] || fail 'apply is not yet available; installed Proxmox validation must be verified first'
+  if [[ $dry_run = true ]]; then
+    printf '\nDry-run: not natively validated; no changes made.\n'
+    return
+  fi
+  [[ -x $script_dir/lxc-firewall-apply ]] || fail 'apply helper is unavailable; install the complete script bundle'
+  render_policy | "$script_dir/lxc-firewall-apply" "$vmid" "$nic"
 }
 main "$@"
