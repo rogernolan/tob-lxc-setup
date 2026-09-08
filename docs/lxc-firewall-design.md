@@ -128,27 +128,20 @@ on other profiles. `--help` requires no host privileges or Proxmox tools.
 
 ## Local discovery and network control traffic
 
-Preserve the Avahi/mDNS service already installed by guest setup. The firewall
-command does not install, start, or reconfigure Avahi.
+Local `.local` name resolution must continue to work after applying a
+restrictive profile, including normal SSH by name from the Mac. Preserve the
+guest's existing Avahi setup. No `.local` discovery over Tailscale is required.
 
-Permit LAN mDNS using UDP 5353, with IPv4 multicast destination `224.0.0.251`
-and IPv6 link-local multicast destination `ff02::fb`. Account for required
-unicast mDNS exchanges as well; avoid a multicast-only rule set that resolves
-names inconsistently. Scope IPv4 discovery sources to `192.168.68.0/22` and
-IPv6 discovery to the local link with protocol-specific rules verified on 105.
-Any IPv6 mDNS or network-control exception is separate from service access:
-it must not make its source a trusted source for SSH, SMB or application ports.
-Do not add a multicast reflector or promise `.local` discovery over Tailscale.
+Use fresh lookups and connections to 105 to verify this behaviour. Inspection
+of actual discovery and connection traffic on 105 is authorized to establish
+which rules are needed; keep captures narrowly scoped to that test. Choose
+the simplest native Proxmox rules supported by the observations, rather than
+prescribing a complete mDNS rule set in advance.
 
-Inspect static/DHCP addressing and preserve required DHCP, IPv6 neighbour
-discovery, router solicitation/received advertisements, and related ICMP error
-traffic using verified native Proxmox behaviour. Do not turn the guest into a
-router or add egress restrictions. Describe the policy as denying unlisted
-unsolicited **application** traffic, rather than denying all inbound packets.
-
-The exact mDNS/control rules must be checked against the installed legacy
-compiler and active rules. IPv4 and IPv6 tests must confirm that service ports
-remain restricted without breaking the intended local discovery path.
+Keep normal guest networking working, including address configuration, DNS
+and outbound HTTPS. Discovery/control allowances must not broaden service
+access: IPv4-only service defaults and evidence-based IPv6 exceptions still
+apply. The firewall command does not reconfigure Avahi or add a reflector.
 
 ## Ownership and interfaces
 
