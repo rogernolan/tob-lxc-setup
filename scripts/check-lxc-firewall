@@ -1,0 +1,77 @@
+#!/usr/bin/perl
+# Read-only privileged preflight. All generated files live in an auto-cleaned
+# temporary directory. No service actions, guest starts, NIC or firewall writes.
+use strict;
+use warnings;
+use File::Temp qw(tempdir);
+use FindBin;
+use JSON::PP;
+use PVE::Cluster;
+use PVE::Firewall;
+use PVE::LXC::Config;
+use PVE::Tools;
+
+my $vmid = shift // 105;
+die "Usage: check-lxc-firewall [105]\n" if @ARGV || $vmid ne '105';
+die "run as root on the Proxmox host\n" if $> != 0;
+my $validator = "$FindBin::Bin/lxc-firewall-validate";
+-f $validator or die "missing companion validator: $validator\n";
+umask 0077;
+my $dir = tempdir('tob-fw-check-XXXXXX', TMPDIR => 1, CLEANUP => 1);
+PVE::Cluster::cfs_update();
+my $data = PVE::Firewall::read_local_vm_config();
+my $guest = $data->{lxc}->{$vmid} // die "105 is not a local LXC\n";
+die "unexpected hostname\n" unless ($guest->{hostname} // '') eq 'tob-test-lxc';
+die "105 is locked\n" if $guest->{lock};
+my @nics = grep { /^net[0-9]+$/ } keys %$guest;
+die "105 requires exactly one NIC\n" unless @nics == 1;
+my $nic = $nics[0];
+my $net = PVE::LXC::Config->parse_lxc_network($guest->{$nic});
+die "105 has no bridge\n" unless $net->{bridge};
+sub write_file {
+    my ($name, $text) = @_;
+    open my $f, '>', "$dir/$name" or die $!;
+    print $f $text; close $f or die $!;
+}
+sub copy_optional {
+    my ($src, $name) = @_;
+    if (-e $src) {
+        write_file($name, PVE::Tools::file_get_contents($src));
+    } else {
+        write_file($name, "# Absent in live configuration\n");
+    }
+}
+copy_optional('/etc/pve/firewall/cluster.fw', 'cluster.fw');
+copy_optional('/etc/pve/local/host.fw', 'host.fw');
+for my $id (keys %{$data->{lxc}}, keys %{$data->{qemu}}) {
+    copy_optional("/etc/pve/firewall/$id.fw", "$id.fw");
+}
+$data->{corosync} = PVE::Corosync::check_conf_exists(1)
+    ? PVE::Cluster::cfs_read_file('corosync.conf') : {};
+# Use intended enforcement in the snapshot only, including for a stopped guest.
+$net->{firewall} = 1;
+$guest->{$nic} = PVE::LXC::Config->print_lxc_network($net);
+write_file('vmdata.json', JSON::PP->new->canonical->encode($data));
+sub validate {
+    my ($label) = @_;
+    open my $f, '-|', $^X, $validator, $dir, $vmid, $nic or die $!;
+    local $/; my $json = <$f>; close $f;
+    die "$label failed native validation\n" if $?;
+    my $result = decode_json($json);
+    printf "%s: PASS (%d IPv4 inbound rules, %d IPv6 inbound rules)\n",
+      $label, scalar(@{$result->{ipv4}}), scalar(@{$result->{ipv6}});
+}
+printf "Host: %s\nGuest: %s (%s)\nNIC: %s\nOriginal NIC: %s\n",
+    PVE::INotify::nodename(), $vmid, $guest->{hostname}, $nic,
+    PVE::LXC::Config->load_config($vmid)->{$nic};
+validate('Existing local firewall configuration');
+my $base = "[OPTIONS]\nenable: 1\npolicy_in: DROP\npolicy_out: ACCEPT\ndhcp: 1\n[RULES]\n";
+for my $profile (['ssh-only', 22], ['application', 22, 8080], ['lan-smb', 22, 445]) {
+    my ($label, @ports) = @$profile;
+    write_file("$vmid.fw", $base . join('', map { "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport $_\n" } @ports));
+    validate("Candidate $label (service rules only)");
+}
+write_file("$vmid.fw", "[OPTIONS]\nenable: 0\npolicy_in: ACCEPT\npolicy_out: ACCEPT\n");
+validate('Candidate unrestricted');
+print "Read-only preflight complete. No live configuration or rules changed.\n";
+print "Discovery and runtime connectivity are not verified by this preflight.\n";

@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Preview increment: activation remains unavailable until native validation is verified.
+set -Eeuo pipefail
+export LC_ALL=C
+pve_root=/etc/pve
+program=${0##*/}
+marker='# Managed by tob-lxc-setup configure-lxc-firewall'
+ports=()
+dry_run=false
+fail() { printf '%s: %s\n' "$program" "$*" >&2; exit 1; }
+usage() {
+  cat <<EOF
+Usage: $program VMID PROFILE [--port PORT ...] [--dry-run]
+Profiles: ssh-only, application, lan-smb, unrestricted
+application requires one or more TCP --port values (1-65535).
+Trusted service source: 192.168.68.0/22 (LAN and SNATed Tailscale).
+Run on the Proxmox host as root. --help needs no host access.
+This development increment supports preview only. Native validation,
+discovery allowances and live application are not yet implemented.
+EOF
+}
+parse_args() {
+  if [[ $# = 1 && ( $1 = --help || $1 = -h ) ]]; then usage; exit 0; fi
+  [[ $# -ge 2 ]] || fail 'VMID and PROFILE are required (see --help)'
+  vmid=$1; profile=$2; shift 2
+  [[ $vmid =~ ^[1-9][0-9]{2,8}$ ]] || fail 'invalid VMID (expected 100-999999999)'
+  case "$profile" in
+    ssh-only|application|lan-smb|unrestricted) ;;
+    *) fail "unknown profile: $profile" ;;
+  esac
+  while (( $# )); do
+    case "$1" in
+      --dry-run) dry_run=true; shift ;;
+      --port)
+        [[ $# -ge 2 ]] || fail '--port requires a value'
+        [[ $2 =~ ^[0-9]+$ && ${#2} -le 5 ]] || fail 'invalid TCP port'
+        port=$((10#$2))
+        (( port >= 1 && port <= 65535 )) || fail 'invalid TCP port (1-65535)'
+        ports+=("$port"); shift 2 ;;
+      *) fail "unknown option: $1" ;;
+    esac
+  done
+  if [[ $profile = application ]]; then
+    (( ${#ports[@]} > 0 )) || fail 'application requires --port'
+  else
+    (( ${#ports[@]} == 0 )) || fail '--port is only valid for application'
+  fi
+}
+inspect_guest() {
+  [[ $(id -u) = 0 ]] || fail 'run as root on the Proxmox host'
+  [[ -f $pve_root/lxc/$vmid.conf ]] || fail "VMID $vmid is not a local LXC"
+  command -v pct >/dev/null || fail 'Proxmox pct command is unavailable'
+  config=$(pct config "$vmid") || fail "cannot inspect LXC $vmid"
+  hostname='(unknown)'; nic=''; nic_config=''; nic_count=0
+  while IFS= read -r line; do
+    case "$line" in
+      'hostname: '*) hostname=${line#hostname: } ;;
+      'lock: '*) fail 'guest is locked; inspect its operation before continuing' ;;
+    esac
+    if [[ $line =~ ^(net[0-9]+):[[:space:]](.*)$ ]]; then
+      nic=${BASH_REMATCH[1]}; nic_config=${BASH_REMATCH[2]}
+      nic_count=$((nic_count + 1))
+    fi
+  done <<< "$config"
+  (( nic_count == 1 )) || fail 'exactly one supported bridged NIC is required'
+  [[ ,$nic_config, =~ ,bridge=[^,]+, ]] || fail 'NIC has no bridge'
+  nic_firewall='0 (absent)'
+  if [[ ,$nic_config, =~ ,firewall=([^,]+), ]]; then
+    nic_firewall=${BASH_REMATCH[1]}
+    [[ $nic_firewall = 0 || $nic_firewall = 1 ]] || fail 'invalid NIC firewall state'
+  fi
+  policy_file=$pve_root/firewall/$vmid.fw
+  ownership=absent
+  if [[ -e $policy_file || -L $policy_file ]]; then
+    [[ -f $policy_file && ! -L $policy_file ]] || fail 'unsupported policy file type'
+    grep -Fxq "$marker" "$policy_file" || fail 'unmanaged firewall file; refusing replacement'
+    [[ $(grep -c '^# Format:' "$policy_file") = 1 ]] &&
+      grep -Fxq '# Format: 1' "$policy_file" || fail 'unknown managed format version'
+    ownership=managed
+  fi
+}
+render_policy() {
+  printf '%s\n' "$marker" '# Format: 1' "# Profile: $profile"
+  printf '%s\n' '# Service-policy preview; discovery rules await verification on 105.' '[OPTIONS]'
+  if [[ $profile = unrestricted ]]; then
+    printf '%s\n' 'enable: 0' 'policy_in: ACCEPT' 'policy_out: ACCEPT'
+    return
+  fi
+  printf '%s\n' 'enable: 1' 'policy_in: DROP' 'policy_out: ACCEPT' '[RULES]'
+  {
+    printf '22\n'
+    case "$profile" in
+      application) printf '%s\n' "${ports[@]}" ;;
+      lan-smb) printf '445\n' ;;
+    esac
+  } | sort -nu | while IFS= read -r service_port; do
+    printf 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport %s\n' "$service_port"
+  done
+}
+main() {
+  parse_args "$@"
+  inspect_guest
+  printf 'VMID: %s\nHostname: %s\nNIC: %s\nNIC configuration: %s\n' \
+    "$vmid" "$hostname" "$nic" "$nic_config"
+  printf 'Current NIC firewall: %s\nProfile: %s\nExisting policy: %s\n' \
+    "$nic_firewall" "$profile" "$ownership"
+  if [[ $profile = unrestricted ]]; then
+    printf 'NIC action: unchanged\nWARNING: unrestricted provides no inbound isolation.\n'
+  elif [[ $nic_firewall = 1 ]]; then
+    printf 'NIC action: unchanged (already enabled)\n'
+  else
+    printf 'NIC action: would enable firewall=1\n'
+  fi
+  printf 'Proposed file: %s\n' "$policy_file"
+  render_policy
+  printf '\nPreview only: not natively validated; discovery rules are not finalized.\n'
+  [[ $dry_run = true ]] || fail 'apply is not yet available; installed Proxmox validation must be verified first'
+}
+main "$@"
