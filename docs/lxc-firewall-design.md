@@ -80,6 +80,17 @@ mDNS discovery. SSH is always included in restrictive profiles for v1.
 `application` replaces the original `caddy-backend` name; `ssh-only` replaces
 `private-ssh`. There are no legacy aliases to maintain for these new commands.
 
+`unrestricted` writes a managed configuration with `enable: 0` and ACCEPT
+policies, preserving the NIC flag. It is an explicit profile transition, not
+deletion of the policy file. Output must say that guest inbound isolation is
+disabled; it does not promise reachability through other network controls.
+
+VMID must be a valid numeric Proxmox identifier resolving to a local LXC.
+Require at least one `--port` for `application`. Accept decimal integers
+1–65535, normalize them, deduplicate and numerically sort ports. Reject unknown
+profiles/options, missing option values, ranges, nonnumeric ports, and `--port`
+on other profiles. `--help` requires no host privileges or Proxmox tools.
+
 ### Direct SMB requirements
 
 `lan-smb` targets a modern Samba file server deliberately using direct SMB
@@ -114,17 +125,6 @@ service advertisements. Document direct TCP 445 listening and SMB2/SMB3-only
 operation as guest-service prerequisites, checked separately before rollout.
 Legacy compatibility, if ever needed, requires a separately named, explicitly
 requested profile; it must not broaden the default `lan-smb` profile.
-
-`unrestricted` writes a managed configuration with `enable: 0` and ACCEPT
-policies, preserving the NIC flag. It is an explicit profile transition, not
-deletion of the policy file. Output must say that guest inbound isolation is
-disabled; it does not promise reachability through other network controls.
-
-VMID must be a valid numeric Proxmox identifier resolving to a local LXC.
-Require at least one `--port` for `application`. Accept decimal integers
-1–65535, normalize them, deduplicate and numerically sort ports. Reject unknown
-profiles/options, missing option values, ranges, nonnumeric ports, and `--port`
-on other profiles. `--help` requires no host privileges or Proxmox tools.
 
 ## Local discovery and network control traffic
 
@@ -164,7 +164,8 @@ Include a format version and selected profile in deterministic comments.
 The tool owns the whole managed file; document that manual edits to managed
 files are replaced on the next apply. Refuse an existing unmarked file,
 including an empty one. Do not include an unmanaged-file replacement override
-in v1. Manual adoption remains a separate reviewed operation.
+in v1. Manual adoption remains a separate reviewed operation. Refuse an unknown
+managed format version rather than assuming that its contents can be replaced.
 
 ## Validation and application safety
 
@@ -191,13 +192,14 @@ that will actually be activated, with its intended enabled state and relevant
 configuration context; successfully compiling a disabled configuration is not
 enough if the compiler skips the candidate rules. Prove the ordering with
 tests, including a deliberately invalid candidate that never becomes active.
+Use fixtures or isolated validation for invalid candidates; do not place
+malformed rules in watched production configuration to test this guarantee.
 If neither the preferred nor an alternative strategy can meet these guarantees,
 leave the live configuration unchanged and report the limitation.
 
-The preferred apply sequence is below. If an alternative requires live staging
-during validation, perform the state recheck and durable backup in steps 4–5
-before that staging, and recheck the expected state again before activation.
-Document its exact sequence and recovery points.
+The apply sequence is below. An alternative may adapt the staging and
+publication details, but must retain these ordering guarantees and document
+its exact sequence and recovery points.
 
 1. Validate arguments, root privileges, host identity, local LXC identity,
    network support, backend/service state, Datacenter enablement, and writable
@@ -205,29 +207,36 @@ Document its exact sequence and recovery points.
    without trying to repair unrelated configuration.
 2. Serialize invocations with a host-local lock. Capture the guest firewall
    file, its original presence/absence, and the complete selected NIC property.
-3. Generate the deterministic candidate and validate it using the preferred
-   isolated mechanism or a demonstrated safe alternative described above.
-   Any staging in watched configuration must be proven unable to activate the
-   unvalidated candidate or disturb existing protection. Validate the candidate
-   in the relevant complete configuration context,
+3. Generate the deterministic candidate. Before any live staging or mutation,
+   recheck the captured state and save a durable, root-only recovery snapshot
+   outside `/etc/pve`, under `/var/backups/tob-lxc-firewall/<VMID>/`. Keep one
+   previous successful state plus any unresolved transaction snapshot; refuse
+   to overwrite unresolved recovery state. Do not accumulate unlimited
+   snapshots. Purely isolated validation need not create a recovery snapshot
+   until it succeeds and a live change is needed.
+4. Validate the candidate using the preferred isolated mechanism or a
+   demonstrated safe alternative described above. Any staging in watched
+   configuration must be proven unable to activate the unvalidated candidate
+   or disturb existing protection. Validate in the relevant complete context,
    including the intended NIC firewall state. A successful exit alone is not
    sufficient if the native parser reports errors while returning success;
    verify its diagnostics contract with malformed fixtures.
-4. Recheck captured state before mutation and abort if it changed. A tool lock
-   does not exclude GUI/API edits: document that concurrent external editing
-   or migration is unsupported during apply.
-5. Save a durable, root-only recovery snapshot outside `/etc/pve`, under
-   `/var/backups/tob-lxc-firewall/<VMID>/`. Keep one previous successful state
-   plus any unresolved transaction snapshot; refuse to overwrite unresolved
-   recovery state. Do not accumulate unlimited snapshots.
+5. Before activation, recheck that the candidate and relevant configuration
+   context still match what was validated, accounting for the tool's own
+   staging. Abort and recover if they changed. A tool lock does not exclude
+   GUI/API edits: concurrent external editing or migration is unsupported
+   during apply. Never silently activate a different candidate from the one
+   validated.
 6. Replace the live firewall file using a complete-file publication mechanism
    verified for pmxcfs. Preserve all other configuration. For restrictive
    profiles, only then enable the NIC flag through native Proxmox tooling,
    preserving every other NIC property. Never temporarily disable an enabled
    NIC. Unrestricted leaves the NIC property unchanged.
 7. Revalidate and wait for bounded evidence that the intended active rules
-   have converged. Distinguish saved configuration from active enforcement.
-   Do not claim success from compiler output alone.
+   have converged for a running guest. For a stopped guest, report the policy
+   as configured with runtime verification pending; do not start it implicitly.
+   Distinguish saved configuration from active enforcement. Do not claim
+   runtime success from compiler output alone.
 8. On an apply failure or handled interruption, restore the original firewall
    file/presence and NIC property and verify recovery. Avoid overwriting a
    concurrent external edit during rollback; retain recovery data and report
@@ -238,10 +247,12 @@ With isolated validation, validation failure leaves the live files and NIC
 untouched. An alternative involving live staging must leave active protection
 unchanged and restore the original staged configuration on validation failure,
 with recovery information retained for an interrupted or failed restoration.
-Apply failure triggers recovery, but the operation spans separate Proxmox objects and is not
-an atomic transaction: transient policy changes and uncatchable interruptions
-cannot be ruled out. Document this limit instead of promising uninterrupted
-connectivity. Do not flush conntrack or reboot automatically during apply.
+Apply failure triggers recovery, but the operation spans separate Proxmox
+objects and is not an atomic transaction. After validation, activation or
+rollback can temporarily affect connectivity; an uncatchable interruption can
+leave recovery pending. This limitation does not permit activation of an
+unvalidated restrictive candidate. Do not flush conntrack or reboot
+automatically during apply.
 
 Identical reruns report no changes and avoid unnecessary writes/backups, while
 still checking whether the desired policy is active. Profile changes replace
@@ -274,6 +285,9 @@ idempotence, and dry-run with no writes. Add failure injection for candidate
 validation, live-file publication, NIC update, post-apply validation, rollback,
 interruption recovery and concurrent state changes. Assert unrelated host,
 Datacenter, NIC and guest configurations are unchanged.
+Cover stopped-guest reporting, unknown managed format versions and a change
+to the candidate or validation context before activation. Test source matching
+with trusted and untrusted address fixtures, not just expected rule text.
 
 For every restrictive profile, assert that default service allow rules use
 only `192.168.68.0/22` and that mDNS/control exceptions do not admit unsolicited
@@ -291,7 +305,7 @@ hostname, addresses, runtime state, guest firewall file and NIC flag. Record
 installed package versions, compiler behaviour, baseline connectivity, recovery
 procedure and exact dry-run output. Stop on identity or configuration mismatch.
 
-Apply `ssh-only` and verify:
+Ensure 105 is running for integration testing. Apply `ssh-only` and verify:
 
 1. Fresh direct LAN SSH succeeds, including a fresh `.local` resolution and
    connection. Record A/AAAA answers and actual source/destination addresses.
@@ -317,7 +331,8 @@ exercised, record this as not tested and retain IPv4-only service access.
 
 On 105, also test an `application` transition using a temporary listener,
 confirm its allowed port is reachable over LAN/Tailscale, then restore
-`ssh-only`. No Caddy publication is necessary. Exercise an unrestricted
+`ssh-only` and confirm new connections to that port are blocked again.
+No Caddy publication is necessary. Exercise an unrestricted
 transition and restoration on this disposable guest if the baseline and
 recovery checks permit it. Remove temporary listeners afterward.
 
@@ -331,13 +346,17 @@ testing. If no Samba fixture is available, record SMB protocol/file-operation
 tests as not run; a TCP listener proves port reachability only. Do not test
 against or reconfigure the production file server to fill this gap.
 
+At the end of successful integration testing, leave 105 on `ssh-only`, remove
+temporary test services/data and verify a fresh SSH connection. On failure,
+use the recovery procedure and report the actual final state.
+
 Provide the script, automated tests, README usage/recovery instructions, exact
 105 dry-run output, live test results, version-dependent findings and honest
 limitations. Mark unavailable tests as not run; do not infer their success.
 README should describe installation on the host, profiles, address scope,
 direct-SMB prerequisites and excluded browsing protocols, local discovery,
-inspection and recovery. Use the
-repository's review-first download/install convention and a reviewed local
+inspection and recovery. Use the repository's review-first download/install
+convention and a reviewed local
 payload; never require running `setup.sh` on the Proxmox host.
 
 ## Exclusions and references
