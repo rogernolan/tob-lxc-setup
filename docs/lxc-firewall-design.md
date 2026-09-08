@@ -72,10 +72,40 @@ mDNS discovery. SSH is always included in restrictive profiles for v1.
 `application` replaces the original `caddy-backend` name; `ssh-only` replaces
 `private-ssh`. There are no legacy aliases to maintain for these new commands.
 
-`lan-smb` deliberately excludes legacy NetBIOS ports and Windows discovery
-protocols. It supports direct SMB by address/name with local mDNS, rather than
-every Samba configuration. Document this limitation; confirm service needs
-before any later rollout to the actual file server.
+### Direct SMB requirements
+
+`lan-smb` targets a modern Samba file server deliberately using direct SMB
+over TCP 445. Clients use SMB2 or SMB3, with SMB1 disabled in the Samba service
+configuration. A port-based firewall cannot enforce the negotiated SMB version:
+opening 445 is not proof that SMB1 is disabled.
+
+The profile must:
+
+- Allow TCP 445 and management SSH TCP 22 from the trusted sources defined
+  above, including SNATed Tailscale clients.
+- Add no TCP or UDP allowances for ports 137–139. In particular, do not open
+  UDP 137 (NetBIOS name service), UDP 138 (NetBIOS datagrams), or TCP 139
+  (SMB over NetBIOS). Do not open UDP 445.
+- Generate explicit service-port rules rather than use a broad Samba/SMB
+  macro that might include legacy ports. Do not enable NetBIOS automatically
+  when discovery or a connection fails.
+- Retain the common local mDNS/control-traffic rules. mDNS is separate from
+  SMB transport and must not introduce a NetBIOS dependency.
+
+Clients connect directly to a share, for example `smb://fileserver.local/share`
+on the LAN or `smb://<server-LAN-IP>/share` through the Tailscale subnet route.
+A normally resolvable DNS name is also suitable. Local `.local` resolution
+does not imply service advertisement or appearance in a file manager's Network
+view. NetBIOS browsing, WINS, WS-Discovery and automatic share discovery are
+not acceptance requirements, and no extra ports are opened to support them.
+
+This is a file-serving profile, not an Active Directory domain-controller or
+general Samba infrastructure profile. The firewall tool must not edit
+`smb.conf`, manage `nmbd`, change authentication/share permissions, or configure
+service advertisements. Document direct TCP 445 listening and SMB2/SMB3-only
+operation as guest-service prerequisites, checked separately before rollout.
+Legacy compatibility, if ever needed, requires a separately named, explicitly
+requested profile; it must not broaden the default `lan-smb` profile.
 
 `unrestricted` writes a managed configuration with `enable: 0` and ACCEPT
 policies, preserving the NIC flag. It is an explicit profile transition, not
@@ -218,6 +248,12 @@ validation, live-file publication, NIC update, post-apply validation, rollback,
 interruption recovery and concurrent state changes. Assert unrelated host,
 Datacenter, NIC and guest configurations are unchanged.
 
+For `lan-smb`, automated rule tests must verify that TCP 445 and TCP 22 are
+allowed only from the configured trusted sources and that no generated rule
+or expanded macro permits TCP/UDP 137–139 or UDP 445. Verify this for fresh
+generation, reruns, and transitions from an `application` profile that had
+explicitly allowed a legacy port, so obsolete allowances cannot survive.
+
 For live tests, use only 105 and first display/capture its config, expected
 hostname, addresses, runtime state, guest firewall file and NIC flag. Record
 installed package versions, compiler behaviour, baseline connectivity, recovery
@@ -243,11 +279,22 @@ confirm its allowed port is reachable over LAN/Tailscale, then restore
 transition and restoration on this disposable guest if the baseline and
 recovery checks permit it. Remove temporary listeners afterward.
 
+Validate `lan-smb` on 105 using a disposable Samba share if a Samba test fixture
+is available. Verify a fresh authenticated SMB2/SMB3 connection and a small
+file read/write over TCP 445 from LAN and Tailscale, direct access by LAN
+`.local` name, continued SSH, and the absence of legacy-port allow rules in
+the active firewall. Confirm the test service rejects SMB1 and does not rely
+on NetBIOS. Use only disposable credentials/data and remove the fixture after
+testing. If no Samba fixture is available, record SMB protocol/file-operation
+tests as not run; a TCP listener proves port reachability only. Do not test
+against or reconfigure the production file server to fill this gap.
+
 Provide the script, automated tests, README usage/recovery instructions, exact
 105 dry-run output, live test results, version-dependent findings and honest
 limitations. Mark unavailable tests as not run; do not infer their success.
 README should describe installation on the host, profiles, address scope,
-modern-SMB limitation, local discovery, inspection and recovery. Use the
+direct-SMB prerequisites and excluded browsing protocols, local discovery,
+inspection and recovery. Use the
 repository's review-first download/install convention and a reviewed local
 payload; never require running `setup.sh` on the Proxmox host.
 
