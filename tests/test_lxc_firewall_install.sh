@@ -64,4 +64,4 @@ cmp "$tmp/original" "$tmp/installed/sbin/configure-lxc-firewall"
 # Earlier launchers remain bound to their complete release after an upgrade.
 bash "$tmp/original" 105 ssh-only > "$tmp/output"
 grep -q 'invoked:105 ssh-only' "$tmp/output"
-printf 'PASS: firewall installer tests\n' 
+printf 'PASS: firewall installer tests\n'
