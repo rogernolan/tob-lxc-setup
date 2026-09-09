@@ -264,3 +264,25 @@ was absent. Timings are individual connection measurements, not benchmarks.
 The IPv6 change was applied after the recorded reboot, so dual-stack reboot
 persistence has not separately been tested. Application/SMB IPv6 rule generation
 has native test coverage, but live service tests were IPv4-only.
+
+## Release verification: 2026-09-09
+
+The apply adapter now accepts any eligible local LXC and its selected single
+NIC; no production guest was changed. New gateway-only service profiles retain
+LAN IPv4/IPv6 SSH and constrain other TCP service access to 192.168.68.71.
+
+- All local setup, Caddy, firewall preview and installer suites passed.
+- Transaction tests passed 28 assertions; generic target tests passed six.
+- Proxmox native compiler tests passed 29 assertions, including gateway-only
+  SMB/development, generic VMID with net3, and a disabled NIC baseline.
+- The complete apply helper passed Perl syntax checking on Proxmox.
+- Independent code review reported no material findings.
+- Installer fixture tests cover complete install, explicit invocation, pinned
+  downloads, incomplete bundles, failed downloads, syntax failure and preserving
+  the previously installed command. A root installation on Proxmox has not yet
+  been run; native tests and staging were unprivileged and read-only to policy.
+
+Remaining live coverage: IPv6 application traffic, Samba file operations,
+unrestricted transition, activation of a previously disabled NIC, and the new
+gateway-only profiles. The previously recorded 105 SSH, discovery, application
+allow/block, idempotence and reboot results remain the available runtime evidence.

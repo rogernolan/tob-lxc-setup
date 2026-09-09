@@ -13,7 +13,8 @@ write_file('host.fw', "[OPTIONS]\n");
 write_file('vmdata.json', encode_json({qemu => {}, lxc => {105 => {net0 => 'name=eth0,bridge=vmbr0,firewall=1,hwaddr=BC:24:11:68:9F:3B,ip=dhcp,type=veth'}}, corosync => {}}));
 my $prefix = "[OPTIONS]\nenable: 1\npolicy_in: DROP\npolicy_out: ACCEPT\ndhcp: 1\n[RULES]\n";
 sub invoke {
-    open my $pipe, '-|', $^X, $validator, $dir, 105, 'net0' or die $!;
+    my ($vmid, $nic) = @_; $vmid //= 105; $nic //= 'net0';
+    open my $pipe, '-|', $^X, $validator, $dir, $vmid, $nic or die $!;
     local $/; my $out = <$pipe>; close $pipe;
     return ($? >> 8, $out);
 }
@@ -40,6 +41,19 @@ check($v6 =~ /-s fdbc:54c7:7b7e:4bdd::\/64 .*--dport 22 .*ACCEPT/, 'IPv6 SSH sou
 check($v6 =~ /-s fdbc:54c7:7b7e:4bdd::\/64 .*--dport 445 .*ACCEPT/, 'SMB allows trusted IPv6 subnet');
 check($v6 =~ /-s fdbc:54c7:7b7e:4bdd::\/64 .*--dport 8080 .*ACCEPT/, 'application allows trusted IPv6 subnet');
 check($v6 !~ /--dport (137|138|139)\b.*ACCEPT/, 'no IPv6 NetBIOS allows');
+write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 22\nIN ACCEPT -source 192.168.68.71 -p tcp -dport 445\n");
+($status, $out) = invoke();
+check($status == 0, 'gateway-only SMB compiles');
+$rules = decode_json($out);
+$v4 = join("\n", @{$rules->{ipv4}}); $v6 = join("\n", @{$rules->{ipv6}});
+check($v4 =~ /-s 192\.168\.68\.71(?:\/32)? .*--dport 445 .*ACCEPT/, 'SMB limited to gateway');
+check($v6 !~ /--dport 445\b/, 'gateway SMB has no direct IPv6 service allow');
+check($v6 =~ /--dport 22 .*ACCEPT/, 'gateway SMB retains IPv6 SSH');
+write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.71 -p tcp\n");
+($status, $out) = invoke();
+check($status == 0, 'development TCP allowance compiles');
+$rules = decode_json($out); $v4 = join("\n", @{$rules->{ipv4}});
+check($v4 =~ /-s 192\.168\.68\.71(?:\/32)? -p tcp -j ACCEPT/, 'development permits all TCP from gateway');
 for my $bad ('IN ACCEPT -p tcp -dport 999999', 'IN ACCEPT -source nonsense -p tcp -dport 22', 'IN ACCEPT -p tcp -dport 22 garbage', 'not a rule') {
     write_file('105.fw', $prefix . "$bad\n");
     ($status, $out) = invoke();
@@ -50,7 +64,18 @@ write_file('105.fw', "[OPTIONS]\nenable: 0\npolicy_in: ACCEPT\npolicy_out: ACCEP
 check($status == 0, 'unrestricted compiles');
 $rules = decode_json($out);
 check(!@{$rules->{ipv4}} && !@{$rules->{ipv6}}, 'unrestricted generates no guest chains');
+write_file('vmdata.json', encode_json({qemu => {}, lxc => {107 => {net3 => 'name=eth0,bridge=vmbr0,firewall=1,hwaddr=BC:24:11:68:9F:3B,ip=dhcp,type=veth'}}, corosync => {}}));
+write_file('107.fw', $prefix . "IN ACCEPT -source 192.168.68.71 -p tcp\n");
+($status, $out) = invoke(107, 'net3');
+check($status == 0, 'generic guest and nonzero NIC compile');
+$rules = decode_json($out);
+check($rules->{chain} eq 'veth107i3', 'native chain follows selected guest and NIC');
+write_file('vmdata.json', encode_json({qemu => {}, lxc => {107 => {net3 => 'name=eth0,bridge=vmbr0,firewall=0,hwaddr=BC:24:11:68:9F:3B,ip=dhcp,type=veth'}}, corosync => {}}));
+($status, $out) = invoke(107, 'net3');
+check($status == 0, 'disabled NIC baseline compiles');
+$rules = decode_json($out);
+check(!@{$rules->{ipv4}} && !@{$rules->{ipv6}}, 'disabled NIC baseline has no enforced guest chains');
 write_file('cluster.fw', "[OPTIONS]\nenable: 0\n");
-($status, $out) = invoke();
+($status, $out) = invoke(107, 'net3');
 check($status != 0, 'disabled cluster cannot produce false validation success');
 print "PASS: $count native compiler assertions\n";

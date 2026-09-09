@@ -42,7 +42,7 @@ direct application access; applications requiring authentication must account
 for that access path.
 
 Trusted service sources are `192.168.68.0/22` and the local IPv6 ULA subnet
-`fdbc:54c7:7b7e:4bdd::/64`. Each profile permits the same selected service ports
+`fdbc:54c7:7b7e:4bdd::/64`. By default, profiles permit the same selected service ports
 from both subnets. Other IPv4/IPv6 sources remain blocked; do not add blanket
 `fe80::/10` or public IPv6 allowances.
 
@@ -55,7 +55,7 @@ changes. Do not automatically trust a new prefix from discovery results.
 ## Command and profiles
 
 ```sh
-configure-lxc-firewall VMID PROFILE [--port PORT ...] [--dry-run]
+configure-lxc-firewall VMID PROFILE [--port PORT ...] [--service-source lan|gateway] [--dry-run]
 configure-lxc-firewall --help
 
 configure-lxc-firewall 105 ssh-only --dry-run
@@ -68,11 +68,20 @@ configure-lxc-firewall 105 application --port 8080 --port 9090 --dry-run
 | `ssh-only` | TCP 22 |
 | `application` | TCP 22 and all explicitly supplied TCP ports |
 | `lan-smb` | TCP 22 and TCP 445 for modern direct SMB |
+| `development` | All TCP from gateway 192.168.68.71; LAN SSH retained |
 | `unrestricted` | Guest enforcement disabled; no inbound isolation from this tool |
 
 All restrictive profiles set `enable: 1`, `policy_in: DROP`, and
 `policy_out: ACCEPT`, and preserve required network control traffic and local
 mDNS discovery. SSH is always included in restrictive profiles for v1.
+For `application` and `lan-smb`, `--service-source gateway` narrows service
+access to `192.168.68.71`, while SSH retains both LAN subnets. Default service
+source is `lan`. `development` requires gateway service access and opens all
+TCP ports from that source, without claiming to identify HTTPS. Reject a LAN
+service source for development and any service-source option for ssh-only or
+unrestricted. Rog approved this exception to the shared LAN/Tailnet tier for
+tob-files and tob-dev on 2026-09-09. Gateway-only access includes Caddy and
+other gateway-originated traffic because SNAT removes the original identity.
 `application` replaces the original `caddy-backend` name; `ssh-only` replaces
 `private-ssh`. There are no legacy aliases to maintain for these new commands.
 

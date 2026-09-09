@@ -27,40 +27,46 @@ its implementation; the first increment is explicitly preview-only.
 
 ## 2. Installed host investigation (requires elevated read access)
 
-- [ ] Capture `pct config 105`, status, package versions, backend/service state
+- [x] Capture `pct config 105`, status, package versions, backend/service state
   and existing guest policy; confirm identity before any mutation.
-- [ ] Inspect installed firewall parsing/compilation code and diagnostics.
+- [x] Inspect installed firewall parsing/compilation code and diagnostics.
   Prove an isolated candidate-validation method or safe activation barrier.
   Record the exact supported mechanism, error contract and relevant context.
-- [ ] Observe fresh `.local` lookup and SSH traffic for 105. Finalize the
-  minimal discovery rules; keep IPv4-only service sources unless evidence
-  justifies a documented, narrow IPv6 exception.
+- [x] Observe fresh `.local` lookup and SSH traffic for 105. Finalize the
+  minimal discovery rules; the approved policy now allows the same service ports
+  from both configured LAN subnets after observing IPv6 SSH selection.
 
 ## 3. Application and recovery
 
-- [ ] Extend fixture tests with the verified native interface and failing
+- [x] Extend fixture tests with the verified native interface and failing
   cases for validation, file publication, NIC update and convergence.
-- [ ] Implement lock, bounded recovery snapshot, candidate validation,
+- [x] Implement lock, bounded recovery snapshot, candidate validation,
   state recheck, publication, NIC mutation and rollback in the approved order.
   Preserve the full NIC property; detect unresolved recovery and external edits.
-- [ ] Add stopped-guest reporting, no-write idempotence and profile transition
+- [x] Add stopped-guest reporting, no-write idempotence and profile transition
   tests, including removal of stale allowed ports. Test invalid candidates
   without exposing production watched configuration to malformed rules.
-- [ ] Verify failed operations preserve or recover the original state and
+- [x] Verify failed operations preserve or recover the original state and
   never activate an unvalidated restrictive candidate.
 
 ## 4. Documentation and live verification
 
-- [ ] Update README with host installation, usage, sources, direct SMB,
+- [x] Update README with host installation, usage, sources, direct SMB,
   preview, recovery and limitations. Remove preview-only status only once
   native validation/application are implemented and verified.
-- [ ] Run all repository shell tests and syntax checks; review final diff.
-- [ ] Record exact 105 dry-run and recovery steps, then perform the approved
+- [x] Run all repository shell tests and syntax checks; review final diff.
+- [x] Record exact 105 dry-run and recovery steps, then perform the approved
   fresh-connection, listener, outbound, idempotence and restart tests on 105.
-- [ ] Test application transitions and optional Samba fixture; distinguish
+- [x] Test application transitions and optional Samba fixture; distinguish
   transport checks from SMB file operations and explicitly report unrun tests.
-- [ ] Leave 105 on `ssh-only`, clean up fixtures and record final state.
+- [x] Leave 105 on `ssh-only`, clean up fixtures and record final state.
 
 Do not claim the full feature complete from the preview increment. Host
 inspection results determine the exact native calls in task 3; do not invent
 an arbitrary-candidate validation option or deploy a guessed apply sequence.
+
+Release follow-up: see `lxc-firewall-release-plan.md`. Checked investigation and
+verification items mean the work and evidence recording were completed, not that
+every optional live scenario ran: actual SMB file transfer, IPv6 application
+traffic, unrestricted transition and enabling a previously disabled NIC remain
+unverified live. See the investigation log for the tested scope.

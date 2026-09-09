@@ -4,6 +4,7 @@ use warnings;
 use FindBin;
 use lib "$FindBin::Bin/lib";
 use TOB::LXCFirewallTransaction;
+use TOB::LXCFirewallTarget;
 use File::Temp qw(tempdir);
 use JSON::PP;
 use PVE::Cluster;
@@ -16,8 +17,6 @@ my ($vmid,$nic) = @ARGV;
 die "Usage: lxc-firewall-apply VMID NIC < candidate.fw\n" unless @ARGV == 2;
 die "run as root on Proxmox\n" if $>;
 die "invalid target\n" unless $vmid =~ /^[1-9][0-9]{2,8}$/ && $nic =~ /^net[0-9]+$/;
-# The initial deployment scope is deliberately limited to the disposable guest.
-die "initial live testing is limited to VMID 105\n" unless $vmid == 105;
 umask 0077;
 my $candidate = do {local $/; <STDIN>};
 die "missing candidate\n" unless defined($candidate) && length($candidate);
@@ -45,11 +44,7 @@ sub capture {
     my $data=PVE::Firewall::read_local_vm_config();
     # Clone native cache objects before substituting target fields.
     $data=decode_json($json->encode($data));
-    my $guest=$data->{lxc}->{$vmid} // die "target is not a local LXC\n";
-    die "unexpected test guest identity\n" unless ($guest->{hostname}//'') eq 'tob-test-lxc';
-    die "guest locked\n" if $guest->{lock};
-    my @nics=grep {/^net[0-9]+$/} keys %$guest;
-    die "requires exactly one selected NIC\n" unless @nics==1 && $nics[0] eq $nic;
+    my $guest=TOB::LXCFirewallTarget::select_guest($data,$vmid,$nic);
     my $nic_value=PVE::LXC::Config->print_lxc_network(
         PVE::LXC::Config->parse_lxc_network($guest->{$nic}));
     my $policy=optional_file($path);
