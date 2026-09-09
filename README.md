@@ -186,37 +186,63 @@ after inspecting it.
 `scripts/configure-lxc-firewall` command runs **as root on Proxmox** and manages
 native guest firewall policy. Caddy publication remains independent.
 
-Current live-apply scope is deliberately restricted to **105 / tob-test-lxc**
-and the verified `pve-firewall` package version **6.0.4**. Other guests can be
-previewed, but applying to production guests is not enabled in this release.
+The adapter requires the verified `pve-firewall` package version **6.0.4**
+and a local, unlocked LXC with exactly one supported bridged NIC. Live testing
+has only changed **105 / tob-test-lxc**. Review the
+[rollout inventory](docs/lxc-firewall-rollout.md) before selecting other guests.
 The native validator and local failure tests pass. Live tests on 105 verified
 SSH, DNS/HTTPS, application-port allow/block transitions, idempotence and
 restriction persistence after reboot. See [test evidence](docs/lxc-firewall-investigation.md)
 for unrun tests and limitations.
 
-Run from a reviewed copy of this repository on the Proxmox host. Keep the
-`scripts/` directory and its `lib/` subdirectory together; the entry point
-uses its adjacent Perl helpers and Proxmox's installed Perl libraries.
+Install on the Proxmox host using a pinned commit. The one-shot command below
+installs the complete bundle; it does **not** change any guest firewall:
 
 ```sh
-sudo bash scripts/configure-lxc-firewall 105 ssh-only --dry-run
-sudo bash scripts/configure-lxc-firewall 105 ssh-only
-sudo bash scripts/configure-lxc-firewall 105 application --port 8080 --port 9090 --dry-run
+curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/c6ba6d6ed68162d6a1bcaee01b0261af1ea7c658/scripts/install-lxc-firewall | sudo bash -s -- --ref c6ba6d6ed68162d6a1bcaee01b0261af1ea7c658
 ```
+
+For installation followed by a preview, append `-- 105 ssh-only --dry-run`.
+To apply, run the installed command explicitly:
+
+```sh
+sudo configure-lxc-firewall 105 ssh-only --dry-run
+sudo configure-lxc-firewall 105 ssh-only
+sudo configure-lxc-firewall 105 application --port 8080 --port 9090 --dry-run
+```
+
+For a review-first installation, download a checkout at the same commit, inspect
+its `scripts/` directory, then run
+`sudo bash scripts/install-lxc-firewall --payload-dir scripts`.
+The installer copies the exact local payload or downloads every helper from the
+specified immutable commit, checks syntax using Proxmox's libraries, and
+atomically replaces `/usr/local/sbin/configure-lxc-firewall`. Complete releases
+remain under `/usr/local/lib/tob-lxc-firewall/releases/`; an already running
+command keeps using its original helpers. Rerun the installer with a newer
+reviewed commit to upgrade. A failed download or validation leaves the previous
+installed command usable. The installer does not alter Proxmox firewall services.
 
 | Profile | Allowed service ports from either trusted LAN subnet |
 | --- | --- |
 | `ssh-only` | TCP 22 |
 | `application` | TCP 22 plus required `--port` values |
 | `lan-smb` | TCP 22 and direct SMB TCP 445 |
+| `development` | All TCP from gateway 192.168.68.71; TCP 22 from both LAN subnets |
 | `unrestricted` | Guest enforcement disabled; no inbound isolation |
 
 LAN clients and Tailscale connections SNATed through `192.168.68.71` share
 this access tier. Applications may also be published through Caddy on that
 gateway, without changing guest firewall rules. Direct clients bypass controls
 provided solely by Caddy, so application authentication must account for them.
-Each selected service port allows both `192.168.68.0/22` and the local IPv6
+By default, each selected service port allows both `192.168.68.0/22` and the local IPv6
 subnet `fdbc:54c7:7b7e:4bdd::/64`. Other source subnets remain blocked.
+
+For `application` and `lan-smb`, `--service-source gateway` restricts service
+ports to `192.168.68.71`, retaining SSH from both LAN subnets. `development`
+always uses gateway-only service access and allows arbitrary TCP ports; this
+does not inspect whether traffic is HTTPS. Gateway access includes Caddy and
+other gateway-originated connections as well as SNATed Tailscale clients.
+This is the approved treatment for tob-files and tob-dev respectively.
 
 Restrictive profiles use inbound DROP, outbound ACCEPT, native DHCP support
 and a LAN UDP 5353 allowance for local name resolution. Testing on 105 showed
@@ -285,6 +311,8 @@ sh -n scripts/add-caddy-host scripts/install-caddy-host
 bash tests/test_setup.sh
 bash tests/test_caddy_remote.sh
 bash tests/test_lxc_firewall.sh
+bash tests/test_lxc_firewall_install.sh
+perl tests/test_lxc_firewall_target.pl
 perl tests/test_lxc_firewall_transaction.pl
 ```
 

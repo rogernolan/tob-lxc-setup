@@ -8,8 +8,11 @@ atomically replaces the launcher. Existing launches keep using their complete
 release. Installation alone does not change guest policy; arguments following
 `--` explicitly invoke the installed command. Keep previous releases for recovery.
 
-- [ ] Test complete installation, invocation, failed downloads and invalid bundles.
-- [ ] Implement scripts/install-lxc-firewall and its fixture tests.
-- [ ] Run local suites and native compiler tests on Proxmox without live mutation.
-- [ ] Document pinned curl command, rollout exclusions and remaining live checks.
-- [ ] Review diff, commit, push and create PR. Do not merge or change production guests.
+- [x] Test complete installation, invocation, failed downloads and invalid bundles.
+- [x] Implement scripts/install-lxc-firewall and its fixture tests.
+- [x] Run local suites and native compiler tests on Proxmox without live mutation.
+- [x] Document pinned curl command, rollout exclusions and remaining live checks.
+- [x] Review diff, commit, push and create PR. Do not merge or change production guests.
+
+Validation evidence is recorded in `lxc-firewall-investigation.md`. No production
+guest changes or root host installation are included in this release session.
