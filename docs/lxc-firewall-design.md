@@ -55,7 +55,7 @@ changes. Do not automatically trust a new prefix from discovery results.
 ## Command and profiles
 
 ```sh
-configure-lxc-firewall VMID PROFILE [--port PORT ...] [--service-source lan|gateway] [--dry-run]
+configure-lxc-firewall VMID PROFILE [--port PORT|START-END ...] [--udp-port PORT|START-END ...] [--service-source lan|gateway] [--dry-run]
 configure-lxc-firewall --help
 
 configure-lxc-firewall 105 ssh-only --dry-run
@@ -66,7 +66,7 @@ configure-lxc-firewall 105 application --port 8080 --port 9090 --dry-run
 | Profile | Inbound service access from trusted sources |
 | --- | --- |
 | `ssh-only` | TCP 22 |
-| `application` | TCP 22 and all explicitly supplied TCP ports |
+| `application` | TCP 22 and explicitly supplied TCP/UDP ports or ranges |
 | `lan-smb` | TCP 22 and TCP 445 for modern direct SMB |
 | `development` | All TCP from gateway 192.168.68.71; LAN SSH retained |
 | `unrestricted` | Guest enforcement disabled; no inbound isolation from this tool |
@@ -91,10 +91,12 @@ deletion of the policy file. Output must say that guest inbound isolation is
 disabled; it does not promise reachability through other network controls.
 
 VMID must be a valid numeric Proxmox identifier resolving to a local LXC.
-Require at least one `--port` for `application`. Accept decimal integers
-1–65535, normalize them, deduplicate and numerically sort ports. Reject unknown
-profiles/options, missing option values, ranges, nonnumeric ports, and `--port`
-on other profiles. `--help` requires no host privileges or Proxmox tools.
+Require at least one `--port` (TCP) or `--udp-port` (UDP) for `application`.
+Accept decimal integers 1–65535 or inclusive START-END ranges. Normalize leading
+zeros and equal endpoints; deduplicate exact entries and sort by endpoints within
+each protocol. Overlaps remain separate allow rules. Render native START:END
+syntax. Reject unknown profiles/options, missing values, descending/malformed
+ranges, nonnumeric ports, and either port option on other profiles. `--help` requires no host privileges or Proxmox tools.
 
 ### Direct SMB requirements
 

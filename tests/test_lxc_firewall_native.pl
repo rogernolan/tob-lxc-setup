@@ -54,6 +54,19 @@ write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.71 -p tcp\n");
 check($status == 0, 'development TCP allowance compiles');
 $rules = decode_json($out); $v4 = join("\n", @{$rules->{ipv4}});
 check($v4 =~ /-s 192\.168\.68\.71(?:\/32)? -p tcp -j ACCEPT/, 'development permits all TCP from gateway');
+write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 50000:50100\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 50000:50100\nIN ACCEPT -source 192.168.68.0/22 -p udp -dport 2021\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 2021\nIN ACCEPT -source 192.168.68.71 -p udp -dport 3000:3002\n");
+($status, $out) = invoke();
+check($status == 0, 'TCP and UDP ranges compile');
+$rules = decode_json($out);
+for my $family ('ipv4', 'ipv6') {
+    my $text = join("\n", @{$rules->{$family}});
+    check($text =~ /-p tcp .*--dport 50000:50100 .*ACCEPT/, "$family preserves TCP range endpoints");
+    check($text =~ /-p udp .*--dport 2021 .*ACCEPT/, "$family preserves UDP discovery allowance");
+    check(index($text, '--dport 50000:50100') < index($text, '-j PVEFW-Drop'), "$family range precedes default drop");
+}
+$v4 = join("\n", @{$rules->{ipv4}}); $v6 = join("\n", @{$rules->{ipv6}});
+check($v4 =~ /-s 192\.168\.68\.71(?:\/32)? -p udp .*--dport 3000:3002 .*ACCEPT/, 'gateway-only UDP range compiles');
+check($v6 !~ /--dport 3000:3002/, 'gateway-only UDP range has no IPv6 LAN allowance');
 for my $bad ('IN ACCEPT -p tcp -dport 999999', 'IN ACCEPT -source nonsense -p tcp -dport 22', 'IN ACCEPT -p tcp -dport 22 garbage', 'not a rule') {
     write_file('105.fw', $prefix . "$bad\n");
     ($status, $out) = invoke();
