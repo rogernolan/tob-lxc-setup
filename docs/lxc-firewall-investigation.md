@@ -247,3 +247,20 @@ link-local trust was added. This supersedes the earlier IPv4-only limitation
 and intermediate SSH-only exception. Local preview tests and 19 native
 compiler assertions pass. Live verification is pending apply of the new bundle:
 `/tmp/tob-firewall-dualstack.dVNMlT/scripts/` on Proxmox.
+
+## Dual-stack SSH live verification
+
+Rog applied the dual-stack ssh-only bundle to 105; it reported matching active
+IPv4/IPv6 guest chain signatures. Fresh SSH checks on 2026-09-09:
+
+- Ordinary `.local`: success in 0.53 seconds, using ULA IPv6 directly.
+- IPv6-forced: success in 0.18 seconds.
+- IPv4-forced: success in 0.18 seconds, through gateway SNAT.
+
+Observed IPv6 client source was
+`fdbc:54c7:7b7e:4bdd:187f:ea46:e3bc:5850`; destination was
+`fdbc:54c7:7b7e:4bdd:be24:11ff:fe68:9f3b`. The earlier five-second fallback
+was absent. Timings are individual connection measurements, not benchmarks.
+The IPv6 change was applied after the recorded reboot, so dual-stack reboot
+persistence has not separately been tested. Application/SMB IPv6 rule generation
+has native test coverage, but live service tests were IPv4-only.

@@ -220,8 +220,8 @@ subnet `fdbc:54c7:7b7e:4bdd::/64`. Other source subnets remain blocked.
 
 Restrictive profiles use inbound DROP, outbound ACCEPT, native DHCP support
 and a LAN UDP 5353 allowance for local name resolution. Testing on 105 showed
-that `.local` SSH selects a ULA IPv6 address. The matching IPv6 service allowances avoid
-waiting for IPv4 fallback; it does not trust `fe80::/10` or all IPv6 sources.
+that `.local` SSH selects a ULA IPv6 address. With the matching IPv6 service allowances, a fresh `.local` SSH connection
+used IPv6 directly in 0.53 seconds, with no IPv4 fallback; it does not trust `fe80::/10` or all IPv6 sources.
 This subnet is specific to the current LAN and must be reviewed if addressing
 changes. Discovery over Tailscale is not promised. The command does not change Avahi, Samba or Caddy configuration.
 `lan-smb` is for direct SMB2/SMB3 access by name/address, not NetBIOS browsing.
