@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Install a complete release, then optionally invoke it. Safe to run via bash -s.
+set -Eeuo pipefail
+
+main() {
+  local prefix=/usr/local
+  local ref= payload_dir= release= launcher= keep_release=false
+  local base=https://raw.githubusercontent.com/rogernolan/tob-lxc-setup
+  local files=(configure-lxc-firewall lxc-firewall-apply lxc-firewall-validate
+    lib/TOB/LXCFirewallTransaction.pm lib/TOB/LXCFirewallTarget.pm)
+  fail() { printf 'install-lxc-firewall: %s\n' "$*" >&2; exit 1; }
+  cleanup() {
+    [[ -z $launcher ]] || rm -f -- "$launcher"
+    if [[ -n $release && $keep_release = false ]]; then rm -rf -- "$release"; fi
+  }
+  # The EXIT trap executes while main's local variables still exist on errors.
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
+  while (( $# )); do
+    case "$1" in
+      --ref) [[ $# -ge 2 ]] || fail '--ref requires a full Git commit'; ref=$2; shift 2 ;;
+      --payload-dir) [[ $# -ge 2 ]] || fail '--payload-dir requires a scripts directory'; payload_dir=$2; shift 2 ;;
+      --) shift; break ;;
+      --help|-h)
+        printf '%s\n' 'Usage: install-lxc-firewall (--ref COMMIT | --payload-dir DIRECTORY) [-- VMID PROFILE OPTIONS...]'
+        trap - EXIT; return ;;
+      *) fail "unknown installer option: $1" ;;
+    esac
+  done
+  [[ $(id -u) = 0 ]] || fail 'run as root on Proxmox'
+  if [[ -n $payload_dir ]]; then
+    [[ -z $ref ]] || fail 'choose either --ref or --payload-dir'
+    [[ -d $payload_dir && ! -L $payload_dir ]] || fail 'invalid payload directory'
+  else
+    [[ $ref =~ ^[0-9a-f]{40}$ ]] || fail '--ref requires a full lowercase 40-character Git commit'
+  fi
+  umask 077
+  install -d -m 0755 "$prefix/lib/tob-lxc-firewall/releases" "$prefix/sbin"
+  release=$(mktemp -d "$prefix/lib/tob-lxc-firewall/releases/release.XXXXXXXX")
+  install -d -m 0755 "$release/lib/TOB"
+  local file
+  for file in "${files[@]}"; do
+    if [[ -n $payload_dir ]]; then
+      [[ -f $payload_dir/$file && ! -L $payload_dir/$file ]] || fail "missing or symlinked payload: $file"
+      # Copy first, then validate the exact private copy that will be installed.
+      cat -- "$payload_dir/$file" > "$release/$file"
+    else
+      curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 120 "$base/$ref/scripts/$file" > "$release/$file"
+    fi
+    [[ -s $release/$file ]] || fail "empty payload: $file"
+  done
+  bash -n "$release/configure-lxc-firewall"
+  perl -I"$release/lib" -c "$release/lib/TOB/LXCFirewallTransaction.pm"
+  perl -I"$release/lib" -c "$release/lib/TOB/LXCFirewallTarget.pm"
+  perl -I"$release/lib" -c "$release/lxc-firewall-validate"
+  perl -I"$release/lib" -c "$release/lxc-firewall-apply"
+  chmod 0755 "$release" "$release/lib" "$release/lib/TOB" \
+    "$release/configure-lxc-firewall" "$release/lxc-firewall-apply" "$release/lxc-firewall-validate"
+  chmod 0644 "$release/lib/TOB/"*.pm
+  printf '%s\n' "${ref:-reviewed-local-payload}" > "$release/source"
+  chmod 0644 "$release/source"
+  launcher=$(mktemp "$prefix/sbin/.configure-lxc-firewall.XXXXXXXX")
+  printf '#!/usr/bin/env bash\n# Managed by tob-lxc-setup installer\nexec %q "$@"\n' \
+    "$release/configure-lxc-firewall" > "$launcher"
+  chmod 0755 "$launcher"
+  if [[ -e $prefix/sbin/configure-lxc-firewall || -L $prefix/sbin/configure-lxc-firewall ]]; then
+    [[ -f $prefix/sbin/configure-lxc-firewall && ! -L $prefix/sbin/configure-lxc-firewall ]] || fail 'existing launcher is not a regular file'
+    grep -Fxq '# Managed by tob-lxc-setup installer' "$prefix/sbin/configure-lxc-firewall" || fail 'refusing to replace an unmanaged command'
+  fi
+  # Keep the release even if interrupted immediately after the atomic rename.
+  keep_release=true
+  mv -f -- "$launcher" "$prefix/sbin/configure-lxc-firewall"
+  launcher=
+  printf 'Installed configure-lxc-firewall from %s\n' "${ref:-reviewed local payload}"
+  printf 'Release: %s\n' "$release"
+  trap - EXIT INT TERM HUP
+  if (( $# )); then
+    exec "$prefix/sbin/configure-lxc-firewall" "$@"
+  fi
+  printf 'No firewall policy changed. Run sudo configure-lxc-firewall --help for usage.\n'
+}
+
+main "$@"

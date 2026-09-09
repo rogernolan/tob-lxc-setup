@@ -1,0 +1,129 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use FindBin;
+use lib "$FindBin::Bin/lib";
+use TOB::LXCFirewallTransaction;
+use TOB::LXCFirewallTarget;
+use File::Temp qw(tempdir);
+use JSON::PP;
+use PVE::Cluster;
+use PVE::Firewall;
+use PVE::LXC::Config;
+use PVE::Tools;
+use PVE::LXC;
+
+my ($vmid,$nic) = @ARGV;
+die "Usage: lxc-firewall-apply VMID NIC < candidate.fw\n" unless @ARGV == 2;
+die "run as root on Proxmox\n" if $>;
+die "invalid target\n" unless $vmid =~ /^[1-9][0-9]{2,8}$/ && $nic =~ /^net[0-9]+$/;
+umask 0077;
+my $candidate = do {local $/; <STDIN>};
+die "missing candidate\n" unless defined($candidate) && length($candidate);
+my $json=JSON::PP->new->canonical;
+my $path="/etc/pve/firewall/$vmid.fw";
+my $validator="$FindBin::Bin/lxc-firewall-validate";
+sub command_output {
+    my (@cmd)=@_;
+    open my $f,'-|',@cmd or die "cannot run $cmd[0]: $!\n";
+    local $/; my $out=<$f>; close $f;
+    die "$cmd[0] failed\n" if $?;
+    return $out // '';
+}
+my $version=command_output('dpkg-query','-W','-f=${Version}','pve-firewall');
+die "native adapter verified only with pve-firewall 6.0.4 (found $version)\n" unless $version eq '6.0.4';
+command_output('systemctl','is-active','pve-firewall');
+sub optional_file {
+    my ($file)=@_;
+    return undef unless -e $file;
+    die "unsupported file $file\n" unless -f $file && !-l $file;
+    return PVE::Tools::file_get_contents($file);
+}
+sub capture {
+    PVE::Cluster::cfs_update();
+    my $data=PVE::Firewall::read_local_vm_config();
+    # Clone native cache objects before substituting target fields.
+    $data=decode_json($json->encode($data));
+    my $guest=TOB::LXCFirewallTarget::select_guest($data,$vmid,$nic);
+    my $nic_value=PVE::LXC::Config->print_lxc_network(
+        PVE::LXC::Config->parse_lxc_network($guest->{$nic}));
+    my $policy=optional_file($path);
+    if (defined $policy) {
+        die "unmanaged policy\n" unless $policy =~ /^# Managed by tob-lxc-setup configure-lxc-firewall$/m;
+        die "unknown managed format\n" unless $policy =~ /^# Format: 1$/m;
+    }
+    my %files;
+    $files{'cluster.fw'}=optional_file('/etc/pve/firewall/cluster.fw');
+    $files{'host.fw'}=optional_file('/etc/pve/local/host.fw');
+    die "nftables backend configured; legacy adapter cannot apply\n"
+        if ($files{'host.fw'}//'') =~ /^\s*nftables:\s*1\s*$/m;
+    for my $id (keys %{$data->{lxc}},keys %{$data->{qemu}}) {
+        $files{"$id.fw"}=optional_file("/etc/pve/firewall/$id.fw") unless $id eq $vmid;
+    }
+    $guest->{$nic}='TARGET-NIC';
+    # This native digest is derived from the original config text, including
+    # the NIC field we intentionally replace. Compare the remaining parsed
+    # properties directly rather than treating our own NIC edit as a conflict.
+    delete $guest->{digest};
+    my $corosync=PVE::Corosync::check_conf_exists(1) ? PVE::Cluster::cfs_read_file('corosync.conf') : {};
+    my $sdn=PVE::Firewall::load_sdn_conf();
+    return {policy=>$policy,nic=>$nic_value,context=>{vmdata=>$data,files=>\%files,corosync=>$corosync,sdn=>$sdn}};
+}
+sub validate {
+    my ($state)=@_;
+    my $dir=tempdir('tob-fw-validate-XXXXXX',TMPDIR=>1,CLEANUP=>1);
+    my $data=decode_json($json->encode($state->{context}->{vmdata}));
+    $data->{lxc}->{$vmid}->{$nic}=$state->{nic};
+    $data->{corosync}=$state->{context}->{corosync};
+    my %files=(%{$state->{context}->{files}},"$vmid.fw"=>$state->{policy},'vmdata.json'=>$json->encode($data));
+    for my $name (keys %files) {
+        open my $f,'>',"$dir/$name" or die $!;
+        print $f ($files{$name}//"# Absent live configuration\n"); close $f or die $!;
+    }
+    return decode_json(command_output($^X,$validator,$dir,$vmid,$nic));
+}
+sub verify {
+    my ($state,$expected)=@_;
+    if (!PVE::LXC::check_running($vmid)) {
+        print "Guest stopped: configuration saved; runtime verification pending.\n";
+        return;
+    }
+    for my $attempt (1..15) {
+        my $match=1;
+        for my $family (['ipv4','iptables-save'],['ipv6','ip6tables-save']) {
+            my ($name,$cmd)=@$family;
+            my $text=command_output($cmd,'-t','filter');
+            for my $chain (keys %{$expected->{signatures}->{$name}}) {
+                my $sig=$expected->{signatures}->{$name}->{$chain};
+                if (defined $sig) {
+                    $match=0 unless $text =~ /^-A \Q$chain\E .*--comment "PVESIG:\Q$sig\E"/m;
+                    # Verify the per-guest chain remains hooked into the bridge path.
+                    $match=0 unless $text =~ /^-A PVEFW-FWBR-(?:IN|OUT) .*-(?:j|g) \Q$chain\E$/m;
+                } else { $match=0 if $text =~ /^:\Q$chain\E /m; }
+            }
+        }
+        if ($match) {print "Active IPv4/IPv6 guest chain signatures verified.\n"; return;}
+        sleep 1 if $attempt<15;
+    }
+    die "active guest rules did not converge within 15 seconds\n";
+}
+sub desired_nic {
+    my ($state)=@_;
+    my $net=PVE::LXC::Config->parse_lxc_network($state->{nic});
+    die "unsupported NIC: requires bridge and MAC\n" unless $net->{bridge} && $net->{hwaddr};
+    $net->{firewall}=1 if $candidate =~ /^enable: 1$/m;
+    return PVE::LXC::Config->print_lxc_network($net);
+}
+my $result=TOB::LXCFirewallTransaction::apply(
+    lock_path=>'/var/backups/tob-lxc-firewall/lock',
+    directory=>"/var/backups/tob-lxc-firewall/$vmid", candidate=>$candidate,
+    desired_nic=>\&desired_nic, capture=>\&capture, validate=>\&validate,
+    publish=>sub {
+        my ($text)=@_;
+        if (defined $text) {PVE::Tools::file_set_contents($path,$text);}
+        elsif (-e $path) {unlink($path) or die "remove policy: $!\n";}
+    },
+    set_nic=>sub {command_output('pct','set',$vmid,"--$nic",$_[0]);},
+    verify=>\&verify,
+);
+print "Firewall $result for $vmid. Recovery snapshot: /var/backups/tob-lxc-firewall/$vmid/previous.json\n";

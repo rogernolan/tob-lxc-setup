@@ -1,0 +1,79 @@
+#!/usr/bin/perl
+# Native compilation only. Never calls update(), iptables, or a firewall service.
+use strict;
+use warnings;
+use Cwd qw(abs_path);
+use JSON::PP;
+use PVE::Firewall;
+use PVE::LXC::Config;
+
+my ($dir, $vmid, $nic) = @ARGV;
+die "Usage: lxc-firewall-validate SNAPSHOT_DIR VMID NIC\n" unless @ARGV == 3;
+$dir = abs_path($dir) // die "snapshot directory does not exist\n";
+die "snapshot must be outside /etc/pve\n" if $dir =~ m{^/etc/pve(?:/|$)};
+die "invalid VMID/NIC\n" unless $vmid =~ /^[1-9][0-9]{2,8}$/ && $nic =~ /^net([0-9]+)$/;
+my $chain = "veth${vmid}i$1";
+sub read_file {
+    my ($path) = @_;
+    die "missing or unsafe snapshot file: $path\n" unless -f $path && !-l $path;
+    open my $f, '<', $path or die "$path: $!\n";
+    local $/; return <$f>;
+}
+my $data = decode_json(read_file("$dir/vmdata.json"));
+die "invalid VM data\n" unless ref($data->{lxc}) eq 'HASH' && ref($data->{qemu}) eq 'HASH';
+my $guest = $data->{lxc}->{$vmid} // die "target LXC absent from snapshot\n";
+my @nics = grep { /^net[0-9]+$/ } keys %$guest;
+die "target requires exactly one selected NIC\n" unless @nics == 1 && $nics[0] eq $nic;
+my $net = PVE::LXC::Config->parse_lxc_network($guest->{$nic});
+# Baselines may have enforcement disabled; candidates use their intended flag.
+# Pre-read every required path: the native parser otherwise treats read failure
+# as an empty configuration, which must not result in a false positive.
+read_file("$dir/cluster.fw"); read_file("$dir/host.fw");
+for my $id (keys %{$data->{lxc}}, keys %{$data->{qemu}}) {
+    die "invalid snapshot VMID\n" unless $id =~ /^[1-9][0-9]{2,8}$/;
+    read_file("$dir/$id.fw");
+}
+my @diagnostics;
+PVE::Firewall::set_verbose(1);
+local $SIG{__WARN__} = sub { push @diagnostics, @_ };
+my ($cluster, $target, @rules);
+my $ok = eval {
+    $cluster = PVE::Firewall::load_clusterfw_conf("$dir/cluster.fw");
+    die "Datacenter firewall is disabled\n" unless $cluster->{options}->{enable};
+    $target = PVE::Firewall::load_vmfw_conf($cluster, 'ct', $vmid, $dir);
+    $data->{testdir} = $dir;
+    @rules = PVE::Firewall::compile(undef, undef, $data, $data->{corosync} // {});
+    1;
+};
+my $error = $@;
+# Native parser/generator can warn and skip malformed rules yet return success.
+# Collect rather than throw inside the warn handler: native eval blocks may catch
+# exceptions. Fail after the entire compile if ANY diagnostic was emitted.
+die "Native validation failed:\n$error" . join('', @diagnostics) if !$ok || @diagnostics;
+die "native compiler returned unexpected output\n" unless @rules == 4;
+my %result;
+for my $family ([ipv4 => 0], [ipv6 => 2]) {
+    my ($name, $index) = @$family;
+    my $filter = $rules[$index]->{filter};
+    die "missing native filter result\n" unless ref($filter) eq 'HASH';
+    for my $direction ('IN', 'OUT') {
+        my $entries = $filter->{"$chain-$direction"};
+        if ($target->{options}->{enable} && $net->{firewall}) {
+            die "enabled candidate did not produce $name $direction chain\n" unless ref($entries) eq 'ARRAY' && @$entries;
+        } else {
+            die "disabled candidate unexpectedly produced guest chains\n" if $entries;
+        }
+        $result{$name . ($direction eq 'OUT' ? '_out' : '')} = $entries // [];
+    }
+}
+$result{chain} = $chain;
+$result{signatures} = {};
+for my $family ([ipv4 => 0], [ipv6 => 2]) {
+    my ($name, $index) = @$family;
+    for my $direction ('IN','OUT') {
+        my $entries = $rules[$index]->{filter}->{"$chain-$direction"};
+        $result{signatures}->{$name}->{"$chain-$direction"} =
+            $entries ? PVE::Firewall::iptables_chain_digest($entries) : undef;
+    }
+}
+print JSON::PP->new->canonical->encode(\%result), "\n";
