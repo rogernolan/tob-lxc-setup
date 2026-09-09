@@ -66,6 +66,10 @@ sub capture {
         $files{"$id.fw"}=optional_file("/etc/pve/firewall/$id.fw") unless $id eq $vmid;
     }
     $guest->{$nic}='TARGET-NIC';
+    # This native digest is derived from the original config text, including
+    # the NIC field we intentionally replace. Compare the remaining parsed
+    # properties directly rather than treating our own NIC edit as a conflict.
+    delete $guest->{digest};
     my $corosync=PVE::Corosync::check_conf_exists(1) ? PVE::Cluster::cfs_read_file('corosync.conf') : {};
     my $sdn=PVE::Firewall::load_sdn_conf();
     return {policy=>$policy,nic=>$nic_value,context=>{vmdata=>$data,files=>\%files,corosync=>$corosync,sdn=>$sdn}};

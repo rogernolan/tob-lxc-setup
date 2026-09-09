@@ -149,3 +149,91 @@ The reviewed apply bundle is staged at:
 Next steps: obtain 105's SSH fingerprint, capture exact live dry-run, verify
 baseline discovery/SSH/outbound connectivity, then apply and test with the
 recorded host-side recovery command available.
+
+## 2026-09-09 baseline and dry-run
+
+Rog supplied the exact ssh-only dry-run: 105/tob-test-lxc, net0 already
+firewall=1, no existing guest policy, inbound DROP/outbound ACCEPT, dhcp=1,
+LAN TCP 22 and LAN UDP 5353; NIC unchanged. No mutation occurred.
+
+Verified scanned SSH ED25519 key against Rog's host-side fingerprint:
+`SHA256:iM2zLqD1BD7/tpLp9tb7JwJ7/x9vXPIscJrWriJU2Fo`.
+A task-specific known-hosts file is at `/tmp/tob-105-known-hosts` on the Mac.
+Guest SSH as rog succeeds with strict checking; sudo inside the guest still
+requires a password and has not been needed.
+
+Guest addresses observed:
+- IPv4: 192.168.68.85/22
+- ULA IPv6: fdbc:54c7:7b7e:4bdd:be24:11ff:fe68:9f3b/64
+- Link-local IPv6: fe80::be24:11ff:fe68:9f3b/64
+
+Ordinary .local SSH selected ULA IPv6, from the Mac's address in the same
+/64. This is NOT link-local service access; do not silently add a fe80 rule
+or a routed IPv6 allow. IPv4-forced SSH succeeded, but its observed source
+was 192.168.68.71, so this check exercised the SNATed gateway path, not a
+proved direct LAN IPv4 path. Avahi is active; DNS lookup and outbound HTTPS
+(HTTP 200 from deb.debian.org) work.
+
+A temporary unprivileged IPv4 HTTP listener is running on port 18080 in 105,
+serving only `firewall-test-105`, with PID/log in
+`/tmp/tob-firewall-listener.nOAwsq/`. Remove it after integration testing.
+The baseline probe from the Mac and gateway should be repeated after apply
+while confirming the listener remains running. Ordinary .local fallback
+behaviour still needs a post-apply test before considering any IPv6 exception.
+
+## First live ssh-only apply and connection checks
+
+Rog ran the staged apply for 105. It reported matching active IPv4/IPv6 guest
+chain signatures and saved `/var/backups/tob-lxc-firewall/105/previous.json`.
+
+Fresh post-apply checks from the Mac:
+- IPv4 SSH succeeded, observed source 192.168.68.71 (gateway SNAT).
+- Guest DNS lookup succeeded and HTTPS to deb.debian.org returned 200.
+- Port 18080 timed out from both the Mac and gateway, while `ss -lnt` inside
+  105 confirmed the IPv4 listener was still running. Baseline probes had
+  succeeded before apply, so this is a meaningful filtering check.
+- Ordinary `.local` SSH succeeded via IPv4 after the explicit five-second
+  ConnectTimeout on the preferred ULA IPv6 address. This is not proof of
+  delay-free default SSH behaviour; without that option the wait can differ.
+
+No IPv6 service exception was added. Idempotent live rerun, restart persistence,
+application-profile transition and cleanup are still outstanding. Direct LAN
+IPv4 separate from the SNATed path and fresh uncached mDNS require additional
+verification; do not count the current SNATed probes as direct LAN evidence.
+
+## Live idempotence and application transition
+
+Rog reran ssh-only: active signatures verified and command reported unchanged.
+He then applied application --port 18080: signatures verified and command
+reported applied. Fresh HTTP probes from the Mac and gateway both returned
+`firewall-test-105`; fresh IPv4 SSH also succeeded. The same listener was
+blocked under ssh-only and allowed under application, as intended.
+Next: restore ssh-only, prove the live listener is blocked again, then restart
+105 and verify persistence and cleanup.
+
+## Reboot persistence and cleanup (2026-09-09)
+
+After restoring ssh-only, Rog supplied active-signature confirmation and a
+port-18080 timeout. He clarified that the first apparent restart had not been
+performed; it was not counted as persistence evidence. After the explicit
+`pct reboot 105`, the guest boot ID changed from
+`febbd380-69f2-44d1-b7ba-178f69f5dc3a` to
+`ea290737-a288-4609-8c91-3ae936190d28` and start time was 07:16:13 guest time.
+
+Fresh post-reboot IPv4 SSH succeeded (source 192.168.68.71), DHCP retained
+192.168.68.85/22, DNS worked, outbound HTTPS returned 200 and Avahi was active.
+A NEW unprivileged listener on 18080 returned `firewall-test-105` to a guest
+loopback probe, but timed out from both Mac and gateway. This verifies the
+inbound restriction after reboot rather than mistaking a stopped listener
+for successful firewalling.
+
+Ordinary .local SSH with ConnectTimeout=5 again succeeded through IPv4 after
+about five seconds. IPv6 address preference remains a usability limitation;
+no ULA or link-local service allowance was added. Tests without an explicit
+connect timeout and fresh uncached mDNS were not performed.
+
+Both test directories and the restarted listener were removed. 105 is left
+on ssh-only. No production LXC or host/Datacenter firewall policy was changed.
+Unrestricted and SMB protocol/file-operation tests were not run live; they
+have native compiler coverage only. A separately proved direct-LAN IPv4 test
+is not claimed: the Mac's observed IPv4 path was SNATed by the gateway.

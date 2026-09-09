@@ -189,8 +189,10 @@ native guest firewall policy. Caddy publication remains independent.
 Current live-apply scope is deliberately restricted to **105 / tob-test-lxc**
 and the verified `pve-firewall` package version **6.0.4**. Other guests can be
 previewed, but applying to production guests is not enabled in this release.
-The native validator and local failure tests pass; live connectivity testing
-is still pending.
+The native validator and local failure tests pass. Live tests on 105 verified
+SSH, DNS/HTTPS, application-port allow/block transitions, idempotence and
+restriction persistence after reboot. See [test evidence](docs/lxc-firewall-investigation.md)
+for unrun tests and limitations.
 
 Run from a reviewed copy of this repository on the Proxmox host. Keep the
 `scripts/` directory and its `lib/` subdirectory together; the entry point
@@ -216,9 +218,10 @@ provided solely by Caddy, so application authentication must account for them.
 No IPv6 SSH/application/SMB source is trusted by default.
 
 Restrictive profiles use inbound DROP, outbound ACCEPT, native DHCP support
-and a LAN UDP 5353 allowance for local name resolution. Ordinary `.local`
-access must be verified on 105 before rollout; discovery over Tailscale is not
-promised. The command does not change Avahi, Samba or Caddy configuration.
+and a LAN UDP 5353 allowance for local name resolution. On 105, `.local` SSH prefers an IPv6 ULA address, then falls back to IPv4.
+Tests with `ConnectTimeout=5` showed a five-second delay; default-client timing
+is not verified. `ssh -4` connects promptly. No IPv6 service exception has been
+added, and discovery over Tailscale is not promised. The command does not change Avahi, Samba or Caddy configuration.
 `lan-smb` is for direct SMB2/SMB3 access by name/address, not NetBIOS browsing.
 It opens no TCP/UDP 137–139 or UDP 445 ports. Samba itself must disable SMB1;
 a port rule cannot enforce its negotiated protocol version.
