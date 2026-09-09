@@ -115,6 +115,7 @@ sub desired_nic {
     return PVE::LXC::Config->print_lxc_network($net);
 }
 my $result=TOB::LXCFirewallTransaction::apply(
+    lock_path=>'/var/backups/tob-lxc-firewall/lock',
     directory=>"/var/backups/tob-lxc-firewall/$vmid", candidate=>$candidate,
     desired_nic=>\&desired_nic, capture=>\&capture, validate=>\&validate,
     publish=>sub {

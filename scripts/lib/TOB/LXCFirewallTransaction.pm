@@ -20,8 +20,11 @@ sub save {
 sub apply {
     my (%arg) = @_;
     my $dir = $arg{directory};
+    my $lock_path = $arg{lock_path} // die "host-wide lock path required\n";
     make_path($dir, {mode=>0700});
-    sysopen(my $lock, "$dir/lock", O_WRONLY|O_CREAT, 0600) or die "open lock: $!\n";
+    # The captured context includes other guests. Hold one host-wide lock from
+    # before capture through verification or rollback; backups remain per guest.
+    sysopen(my $lock, $lock_path, O_WRONLY|O_CREAT, 0600) or die "open lock: $!\n";
     flock($lock,LOCK_EX|LOCK_NB) or die "another firewall operation is running\n";
     my $pending = "$dir/pending.json";
     die "unresolved transaction at $pending; recover before retrying\n" if -e $pending;

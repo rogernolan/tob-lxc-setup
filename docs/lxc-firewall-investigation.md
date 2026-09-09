@@ -286,3 +286,14 @@ Remaining live coverage: IPv6 application traffic, Samba file operations,
 unrestricted transition, activation of a previously disabled NIC, and the new
 gateway-only profiles. The previously recorded 105 SSH, discovery, application
 allow/block, idempotence and reboot results remain the available runtime evidence.
+
+## PR review: serialize applies across guests
+
+The reviewer identified that per-VMID locks did not protect the shared context
+snapshot. Replaced them with `/var/backups/tob-lxc-firewall/lock`, held before
+capture through verification or rollback. Recovery snapshots stay per VMID.
+The two-process regression failed before the fix and passed afterward on both
+macOS and Proxmox (34 transaction assertions). It proves that a contending guest
+cannot capture or mutate state, leaves no pending recovery, and can retry once
+the first guest finishes. Preview, installer and target tests also passed; the
+apply helper passed native Proxmox Perl syntax checking. No live policy changed.

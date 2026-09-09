@@ -209,7 +209,10 @@ its exact sequence and recovery points.
    network support, backend/service state, Datacenter enablement, and writable
    cluster configuration. Detect pre-existing native compiler errors and abort
    without trying to repair unrelated configuration.
-2. Serialize invocations with a host-local lock. Capture the guest firewall
+2. Serialize invocations across all VMIDs with one host-wide lock, held from
+   before context capture through verification or rollback. Keep recovery data
+   per VMID; a concurrent apply exits before capturing context and can be retried
+   after the active operation finishes. Capture the guest firewall
    file, its original presence/absence, and the complete selected NIC property.
 3. Generate the deterministic candidate. Before any live staging or mutation,
    recheck the captured state and save a durable, root-only recovery snapshot
