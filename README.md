@@ -194,7 +194,7 @@ Install on the Proxmox host using a pinned commit. The one-shot command below
 installs the complete bundle; it does **not** change any guest firewall:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/c6ba6d6ed68162d6a1bcaee01b0261af1ea7c658/scripts/install-lxc-firewall | sudo bash -s -- --ref c6ba6d6ed68162d6a1bcaee01b0261af1ea7c658
+curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/963028907cc2df2874e5285446b39ca974a6f329/scripts/install-lxc-firewall | sudo bash -s -- --ref 963028907cc2df2874e5285446b39ca974a6f329
 ```
 
 For installation followed by a preview, append `-- 105 ssh-only --dry-run`.
@@ -263,7 +263,10 @@ marked file; manual edits to it will be replaced on a later apply. No generic
 force/adoption option is provided.
 
 Application failures attempt to restore the prior policy and NIC configuration.
-Private recovery state is retained under `/var/backups/tob-lxc-firewall/105/`.
+Private recovery state is retained under `/var/backups/tob-lxc-firewall/VMID/`.
+All guest applies share `/var/backups/tob-lxc-firewall/lock`; if another operation
+is running, retry after it finishes. The lock covers capture, validation,
+activation and recovery.
 `previous.json` holds the last successful operation's prior state;
 `pending.json` means recovery is unresolved and blocks another apply. Concurrent
 GUI/API edits are unsupported; detected external changes are not overwritten.
