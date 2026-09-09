@@ -194,7 +194,7 @@ Install on the Proxmox host using a pinned commit. The one-shot command below
 installs the complete bundle; it does **not** change any guest firewall:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/963028907cc2df2874e5285446b39ca974a6f329/scripts/install-lxc-firewall | sudo bash -s -- --ref 963028907cc2df2874e5285446b39ca974a6f329
+curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/a89c8323c068a933362989fe2920d39dc110c0e6/scripts/install-lxc-firewall | sudo bash -s -- --ref a89c8323c068a933362989fe2920d39dc110c0e6
 ```
 
 For installation followed by a preview, append `-- 105 ssh-only --dry-run`.
@@ -220,7 +220,7 @@ installed command usable. The installer does not alter Proxmox firewall services
 | Profile | Allowed service ports from either trusted LAN subnet |
 | --- | --- |
 | `ssh-only` | TCP 22 |
-| `application` | TCP 22 plus required `--port` values |
+| `application` | TCP 22 plus selected TCP `--port` and UDP `--udp-port` values |
 | `lan-smb` | TCP 22 and direct SMB TCP 445 |
 | `development` | All TCP from gateway 192.168.68.71; TCP 22 from both LAN subnets |
 | `unrestricted` | Guest enforcement disabled; no inbound isolation |
@@ -231,6 +231,13 @@ gateway, without changing guest firewall rules. Direct clients bypass controls
 provided solely by Caddy, so application authentication must account for them.
 By default, each selected service port allows both `192.168.68.0/22` and the local IPv6
 subnet `fdbc:54c7:7b7e:4bdd::/64`. Other source subnets remain blocked.
+
+Application allowances accept single ports or inclusive ranges, for example
+`--port 50000-50100 --udp-port 2021`. Repeat either option to add more; UDP-only
+applications are supported. Ports must be 1–65535 and ranges ascending. Exact
+normalized duplicates are removed; overlapping ranges remain separate rules.
+TCP and UDP allowances use the same selected source scope. SSH and the baseline
+LAN mDNS allowance remain independently permitted.
 
 For `application` and `lan-smb`, `--service-source gateway` restricts service
 ports to `192.168.68.71`, retaining SSH from both LAN subnets. `development`

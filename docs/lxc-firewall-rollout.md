@@ -32,3 +32,24 @@ guest listeners before rollout:
 - Restaurant Radar: `192.168.68.75:8765`.
 
 No production firewall has been applied from this inventory.
+
+## Bambuddy Virtual Printer follow-up
+
+Rog confirmed Virtual Printer is in use. The supplied live listener inventory
+shows UI TCP 8000, UDP discovery 2021, TCP 21/80/322/443/990/2024–2026/3000/3002/
+6000/8883, and TCP passive file transfer 50000–50100. This reflects the installed
+version rather than assuming every upstream release has identical listeners.
+Proposed preview with the range-support release (not applied):
+
+```sh
+sudo configure-lxc-firewall 100 application \
+  --port 8000 --port 21 --port 80 --port 322 --port 443 --port 990 \
+  --port 2024-2026 --port 3000 --port 3002 --port 6000 --port 8883 \
+  --port 50000-50100 --udp-port 2021 --dry-run
+```
+
+Before applying to 100, test TCP range endpoints/outside ports and UDP request/
+response with disposable listeners on 105, then restore ssh-only. Validate
+Virtual Printer discovery, sending a print/file and camera access in an attended
+Bambuddy session. A listener inventory alone does not prove these behaviours.
+Gateway 101 remains unchanged by agreement.

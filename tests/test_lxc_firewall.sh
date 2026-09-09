@@ -38,7 +38,7 @@ reject 'VMID' abc ssh-only --dry-run
 reject 'VMID' 0 ssh-only --dry-run
 reject 'unknown profile' 105 made-up --dry-run
 reject 'requires --port' 105 application --dry-run
-for port in 0 65536 -1 abc 80-90 999999999999999999999999; do
+for port in 0 65536 -1 abc 90-80 1-65536 0-80 80- 80:90 80,90 999999999999999999999999; do
   reject 'port' 105 application --port "$port" --dry-run
 done
 reject 'requires a value' 105 application --port
@@ -60,6 +60,28 @@ run 105 application --port 9090 --port 08080 --port 8080 --dry-run
 [[ $(grep -c -- '-dport 8080$' "$FIXTURE/out") = 2 ]] || fail 'expected one rule per address family'
 [[ $(grep -- '-source 192.168.68.0/22 -p tcp -dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'port ordering'
 [[ $(grep -- '-source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'IPv6 application parity'
+run 105 application --port 50000-50100 --port 05000-05010 --port 5000-5010 --port 5000-5000 --udp-port 02021 --udp-port 2021 --udp-port 3000-3002 --dry-run
+contains 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 50000:50100'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 50000:50100'
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 2021'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 3000:3002'
+[[ $(grep -c -- '-p tcp -dport 5000:5010$' "$FIXTURE/out") = 2 ]] || fail 'range deduplication'
+[[ $(grep -c -- '-p udp -dport 2021$' "$FIXTURE/out") = 2 ]] || fail 'UDP deduplication'
+contains '-p tcp -dport 5000'
+cp "$FIXTURE/out" "$FIXTURE/ranges"
+run 105 application --udp-port 3000-3002 --udp-port 2021 --port 5000 --port 5000-5010 --port 50000-50100 --dry-run
+cmp -s "$FIXTURE/ranges" "$FIXTURE/out" || fail 'range ordering is not deterministic'
+run 105 application --udp-port 22 --udp-port 1-65535 --service-source gateway --dry-run
+contains 'IN ACCEPT -source 192.168.68.71 -p udp -dport 22'
+contains 'IN ACCEPT -source 192.168.68.71 -p udp -dport 1:65535'
+if grep -Eq 'source (192.168.68.0/22|fdbc:).*udp.*dport (22|1:65535)$' "$FIXTURE/out"; then fail 'gateway UDP leaked to LAN'; fi
+for port in 0 65536 90-80 80- 80:90 1-2-3 abc; do
+  reject 'port' 105 application --udp-port "$port" --dry-run
+done
+reject 'requires a value' 105 application --udp-port
+for profile in ssh-only lan-smb development unrestricted; do
+  reject 'only valid for application' 105 "$profile" --udp-port 2021 --dry-run
+done
 run 105 lan-smb --dry-run
 contains '-dport 445'
 contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 445'
