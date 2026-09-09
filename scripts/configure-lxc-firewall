@@ -15,6 +15,7 @@ Usage: $program VMID PROFILE [--port PORT ...] [--dry-run]
 Profiles: ssh-only, application, lan-smb, unrestricted
 application requires one or more TCP --port values (1-65535).
 Trusted service source: 192.168.68.0/22 (LAN and SNATed Tailscale).
+The same ports allow the local IPv6 subnet fdbc:54c7:7b7e:4bdd::/64.
 Run on the Proxmox host as root. --help needs no host access.
 Live apply is currently limited to the disposable VMID 105.
 Dry-run renders only; application uses isolated native validation and recovery.
@@ -96,6 +97,7 @@ render_policy() {
     esac
   } | sort -nu | while IFS= read -r service_port; do
     printf 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport %s\n' "$service_port"
+    printf 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport %s\n' "$service_port"
   done
   printf '%s\n' 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 5353'
 }

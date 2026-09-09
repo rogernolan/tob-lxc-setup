@@ -204,7 +204,7 @@ sudo bash scripts/configure-lxc-firewall 105 ssh-only
 sudo bash scripts/configure-lxc-firewall 105 application --port 8080 --port 9090 --dry-run
 ```
 
-| Profile | Allowed service ports from `192.168.68.0/22` |
+| Profile | Allowed service ports from either trusted LAN subnet |
 | --- | --- |
 | `ssh-only` | TCP 22 |
 | `application` | TCP 22 plus required `--port` values |
@@ -215,13 +215,15 @@ LAN clients and Tailscale connections SNATed through `192.168.68.71` share
 this access tier. Applications may also be published through Caddy on that
 gateway, without changing guest firewall rules. Direct clients bypass controls
 provided solely by Caddy, so application authentication must account for them.
-No IPv6 SSH/application/SMB source is trusted by default.
+Each selected service port allows both `192.168.68.0/22` and the local IPv6
+subnet `fdbc:54c7:7b7e:4bdd::/64`. Other source subnets remain blocked.
 
 Restrictive profiles use inbound DROP, outbound ACCEPT, native DHCP support
-and a LAN UDP 5353 allowance for local name resolution. On 105, `.local` SSH prefers an IPv6 ULA address, then falls back to IPv4.
-Tests with `ConnectTimeout=5` showed a five-second delay; default-client timing
-is not verified. `ssh -4` connects promptly. No IPv6 service exception has been
-added, and discovery over Tailscale is not promised. The command does not change Avahi, Samba or Caddy configuration.
+and a LAN UDP 5353 allowance for local name resolution. Testing on 105 showed
+that `.local` SSH selects a ULA IPv6 address. The matching IPv6 service allowances avoid
+waiting for IPv4 fallback; it does not trust `fe80::/10` or all IPv6 sources.
+This subnet is specific to the current LAN and must be reviewed if addressing
+changes. Discovery over Tailscale is not promised. The command does not change Avahi, Samba or Caddy configuration.
 `lan-smb` is for direct SMB2/SMB3 access by name/address, not NetBIOS browsing.
 It opens no TCP/UDP 137–139 or UDP 445 ports. Samba itself must disable SMB1;
 a port rule cannot enforce its negotiated protocol version.

@@ -49,6 +49,7 @@ run 105 ssh-only --dry-run || fail 'SSH preview failed'
 contains 'NIC: net1'
 contains 'Current NIC firewall: 0'
 contains 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 22'
 contains 'not natively validated'
 contains 'dhcp: 1'
 contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 5353'
@@ -56,10 +57,12 @@ cp "$FIXTURE/out" "$FIXTURE/first"
 run 105 ssh-only --dry-run
 cmp -s "$FIXTURE/first" "$FIXTURE/out" || fail 'preview not deterministic'
 run 105 application --port 9090 --port 08080 --port 8080 --dry-run
-[[ $(grep -c -- '-dport 8080$' "$FIXTURE/out") = 1 ]] || fail 'duplicate ports'
-[[ $(grep -- '-p tcp -dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'port ordering'
+[[ $(grep -c -- '-dport 8080$' "$FIXTURE/out") = 2 ]] || fail 'expected one rule per address family'
+[[ $(grep -- '-source 192.168.68.0/22 -p tcp -dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'port ordering'
+[[ $(grep -- '-source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport' "$FIXTURE/out" | sed 's/.*-dport //') = $'22\n8080\n9090' ]] || fail 'IPv6 application parity'
 run 105 lan-smb --dry-run
 contains '-dport 445'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 445'
 if grep -Eq -- '-dport (137|138|139)|fe80::|SMB\(' "$FIXTURE/out"; then fail 'overbroad SMB policy'; fi
 run 105 unrestricted --dry-run
 contains 'enable: 0'

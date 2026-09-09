@@ -30,7 +30,16 @@ check(index($v4, '--dport 445') < index($v4, '-j PVEFW-Drop'), 'SMB allow preced
 check($v4 =~ /--dport 68 .*ACCEPT/, 'DHCP response preserved');
 check($v4 =~ /-s 192\.168\.68\.0\/22 .*--dport 5353 .*ACCEPT/, 'LAN mDNS allowance compiles');
 check($rules->{signatures}->{ipv4}->{'veth105i0-IN'}, 'native chain signature returned');
-check($v6 !~ /--dport (22|445)\b/, 'no IPv6 service allowance');
+check($v6 !~ /--dport (22|445)\b/, 'baseline has no IPv6 service allowance');
+write_file('105.fw', $prefix . "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 445\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 22\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 445\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 8080\n");
+($status, $out) = invoke();
+check($status == 0, 'dual-stack service rules compile');
+$rules = decode_json($out);
+$v6 = join("\n", @{$rules->{ipv6}});
+check($v6 =~ /-s fdbc:54c7:7b7e:4bdd::\/64 .*--dport 22 .*ACCEPT/, 'IPv6 SSH source constrained to observed subnet');
+check($v6 =~ /-s fdbc:54c7:7b7e:4bdd::\/64 .*--dport 445 .*ACCEPT/, 'SMB allows trusted IPv6 subnet');
+check($v6 =~ /-s fdbc:54c7:7b7e:4bdd::\/64 .*--dport 8080 .*ACCEPT/, 'application allows trusted IPv6 subnet');
+check($v6 !~ /--dport (137|138|139)\b.*ACCEPT/, 'no IPv6 NetBIOS allows');
 for my $bad ('IN ACCEPT -p tcp -dport 999999', 'IN ACCEPT -source nonsense -p tcp -dport 22', 'IN ACCEPT -p tcp -dport 22 garbage', 'not a rule') {
     write_file('105.fw', $prefix . "$bad\n");
     ($status, $out) = invoke();

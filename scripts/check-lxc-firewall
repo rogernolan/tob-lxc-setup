@@ -68,7 +68,7 @@ validate('Existing local firewall configuration');
 my $base = "[OPTIONS]\nenable: 1\npolicy_in: DROP\npolicy_out: ACCEPT\ndhcp: 1\n[RULES]\n";
 for my $profile (['ssh-only', 22], ['application', 22, 8080], ['lan-smb', 22, 445]) {
     my ($label, @ports) = @$profile;
-    write_file("$vmid.fw", $base . join('', map { "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport $_\n" } @ports));
+    write_file("$vmid.fw", $base . join('', map { "IN ACCEPT -source 192.168.68.0/22 -p tcp -dport $_\nIN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport $_\n" } @ports));
     validate("Candidate $label (service rules only)");
 }
 write_file("$vmid.fw", "[OPTIONS]\nenable: 0\npolicy_in: ACCEPT\npolicy_out: ACCEPT\n");

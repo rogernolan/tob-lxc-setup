@@ -237,3 +237,13 @@ on ssh-only. No production LXC or host/Datacenter firewall policy was changed.
 Unrestricted and SMB protocol/file-operation tests were not run live; they
 have native compiler coverage only. A separately proved direct-LAN IPv4 test
 is not claimed: the Mac's observed IPv4 path was SNATed by the gateway.
+
+## Approved dual-stack follow-up
+
+Rog approved identical service access for the IPv4 LAN subnet and the observed
+ULA IPv6 /64. Renderer and tests now include both source rules for every
+selected service port (SSH, application and SMB); no blanket external IPv6 or
+link-local trust was added. This supersedes the earlier IPv4-only limitation
+and intermediate SSH-only exception. Local preview tests and 19 native
+compiler assertions pass. Live verification is pending apply of the new bundle:
+`/tmp/tob-firewall-dualstack.dVNMlT/scripts/` on Proxmox.

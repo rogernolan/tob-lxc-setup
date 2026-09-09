@@ -41,20 +41,16 @@ published through Caddy. Authentication enforced only by Caddy does not protect
 direct application access; applications requiring authentication must account
 for that access path.
 
-The v1 trusted service source is IPv4 `192.168.68.0/22` only. Do not include
-`fe80::/10` as a blanket trusted source for SSH, SMB or application ports.
-The Mac's use of link-local IPv6 to reach the Proxmox host does not establish
-how guest `.local` connections behave.
+Trusted service sources are `192.168.68.0/22` and the local IPv6 ULA subnet
+`fdbc:54c7:7b7e:4bdd::/64`. Each profile permits the same selected service ports
+from both subnets. Other IPv4/IPv6 sources remain blocked; do not add blanket
+`fe80::/10` or public IPv6 allowances.
 
-Record guest name-resolution results and actual connection addresses in the
-105 tests. IPv6 link-local service access may be added only where those tests
-demonstrate it is required, scoped to the specific service, source and interface
-needed, with the evidence and rule documented. An IPv6 address in an mDNS answer
-alone is not sufficient evidence. The tool must not automatically broaden
-service rules in response to discovery results or a failed connection.
-Routed/global IPv6 service access requires a future explicit source-policy
-extension. Until a justified exception is defined, restrictive profiles allow
-no unsolicited inbound IPv6 service connections.
+This dual-stack policy was approved on 2026-09-09 after tests showed ordinary
+`.local` SSH selecting a guest ULA address and suffering IPv4 fallback delays.
+It replaces the initial IPv4-only policy and the intermediate SSH-only IPv6
+proposal. The ULA prefix is specific to this LAN; review it if addressing
+changes. Do not automatically trust a new prefix from discovery results.
 
 ## Command and profiles
 
@@ -140,8 +136,7 @@ prescribing a complete mDNS rule set in advance.
 
 Keep normal guest networking working, including address configuration, DNS
 and outbound HTTPS. Discovery/control allowances must not broaden service
-access: IPv4-only service defaults and evidence-based IPv6 exceptions still
-apply. The firewall command does not reconfigure Avahi or add a reflector.
+access: the same trusted-subnet boundaries apply to both address families. The firewall command does not reconfigure Avahi or add a reflector.
 
 ## Ownership and interfaces
 
@@ -289,10 +284,10 @@ Cover stopped-guest reporting, unknown managed format versions and a change
 to the candidate or validation context before activation. Test source matching
 with trusted and untrusted address fixtures, not just expected rule text.
 
-For every restrictive profile, assert that default service allow rules use
-only `192.168.68.0/22` and that mDNS/control exceptions do not admit unsolicited
-IPv6 TCP service traffic. If a 105-proven IPv6 service exception is subsequently
-added, test its exact scope and verify that unrelated services remain blocked.
+For every restrictive profile, assert that each selected TCP service port has
+exactly one IPv4 and one IPv6 allow rule, scoped to the two trusted subnets.
+Discovery/control rules must not allow other application ports. Unrestricted
+must generate no service rules.
 
 For `lan-smb`, automated rule tests must verify that TCP 445 and TCP 22 are
 allowed only from the configured trusted sources and that no generated rule
@@ -309,10 +304,8 @@ Ensure 105 is running for integration testing. Apply `ssh-only` and verify:
 
 1. Fresh direct LAN SSH succeeds, including a fresh `.local` resolution and
    connection. Record A/AAAA answers and actual source/destination addresses.
-   Test with the default IPv4-only service policy first. If ordinary `.local`
-   access fails, distinguish resolution, client address selection and service
-   reachability before proposing a service-specific IPv6 exception. Record
-   IPv4-forced access separately; it does not prove ordinary `.local` works.
+   Verify ordinary `.local` SSH and IPv6-forced SSH connect promptly from the
+   trusted IPv6 subnet, without requiring IPv4 fallback.
 2. Fresh SSH through the gateway/Tailscale subnet route succeeds; verify its
    observed source address. Existing SSH sessions are not evidence.
 3. A temporary TCP listener proved reachable before the change becomes
@@ -324,10 +317,10 @@ Ensure 105 is running for integration testing. Apply `ssh-only` and verify:
 6. Restart only 105 and repeat the reachability/discovery checks.
 
 Where 105 has usable IPv6 connectivity, verify that fresh IPv6 connections to
-SSH and listening test service ports remain blocked under the default policy,
+unlisted listening test service ports remain blocked,
 while required local discovery/control traffic still works. Confirm listeners
 and the IPv6 path before attributing failure to filtering. If IPv6 cannot be
-exercised, record this as not tested and retain IPv4-only service access.
+exercised, record this as not tested; do not claim dual-stack runtime verification.
 
 On 105, also test an `application` transition using a temporary listener,
 confirm its allowed port is reachable over LAN/Tailscale, then restore
