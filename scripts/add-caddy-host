@@ -10,18 +10,23 @@ lock_file=/run/lock/add-caddy-host.lock
 backup_dir=/var/backups/caddy-hosts
 insecure_tls=false
 force=false
+update_dns=false
 
 usage() {
 	cat >&2 <<EOF
-Usage: $program [--insecure-upstream-tls] [--force] HOSTNAME UPSTREAM
+Usage: $program [--insecure-upstream-tls] [--update-dns] [--force] HOSTNAME UPSTREAM
 
 Examples:
   $program app.hatbat.net http://192.168.68.20:8080
+  $program --update-dns app.hatbat.net http://192.168.68.20:8080
   $program --insecure-upstream-tls admin.hatbat.net https://192.168.68.30:8443
 
 UPSTREAM must be an explicit http:// or https:// URL using an RFC1918 IPv4
 address and port. Paths, queries, fragments, and embedded credentials are
 not accepted.
+
+DNS is not changed unless --update-dns is specified. Without that option,
+the hostname must already resolve to this gateway.
 EOF
 	exit 2
 }
@@ -34,6 +39,7 @@ fail() {
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--insecure-upstream-tls) insecure_tls=true; shift ;;
+		--update-dns) update_dns=true; shift ;;
 		--force) force=true; shift ;;
 		--help|-h) usage ;;
 		--) shift; break ;;
@@ -49,8 +55,12 @@ upstream=${2%/}
 [ "$(id -u)" -eq 0 ] || fail "run as root (for example: sudo $program ...)"
 
 if ! printf '%s\n' "$hostname" |
+	grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$'; then
+	fail "HOSTNAME must be a lowercase DNS name"
+fi
+if [ "$update_dns" = true ] && ! printf '%s\n' "$hostname" |
 	grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.hatbat\.net$'; then
-	fail "HOSTNAME must be a lowercase subdomain of hatbat.net"
+	fail "--update-dns requires a lowercase subdomain of hatbat.net"
 fi
 
 if ! printf '%s\n' "$upstream" |
@@ -90,7 +100,9 @@ case "$probe_result" in
 	*) printf '%s: upstream probe returned HTTP %s\n' "$program" "$probe_result" ;;
 esac
 
-for required_path in "$caddyfile" "$ddns_env" "$ddns_command"; do
+required_paths="$caddyfile"
+[ "$update_dns" = true ] && required_paths="$required_paths $ddns_env $ddns_command"
+for required_path in $required_paths; do
 	[ -e "$required_path" ] || fail "required path is missing: $required_path"
 done
 
@@ -104,7 +116,9 @@ timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 operation_backup=$backup_dir/$timestamp-$hostname
 install -d -o root -g root -m 0700 "$operation_backup"
 cp -a "$caddyfile" "$operation_backup/Caddyfile"
-cp -a "$ddns_env" "$operation_backup/cloudflare-ddns.env"
+if [ "$update_dns" = true ]; then
+	cp -a "$ddns_env" "$operation_backup/cloudflare-ddns.env"
+fi
 site_existed=false
 if [ -e "$site_file" ]; then
 	site_existed=true
@@ -117,7 +131,9 @@ rollback() {
 	transaction_active=false
 	printf '%s: rolling back configuration\n' "$program" >&2
 	cp -a "$operation_backup/Caddyfile" "$caddyfile"
-	cp -a "$operation_backup/cloudflare-ddns.env" "$ddns_env"
+	if [ "$update_dns" = true ]; then
+		cp -a "$operation_backup/cloudflare-ddns.env" "$ddns_env"
+	fi
 	if [ "$site_existed" = true ]; then
 		cp -a "$operation_backup/$hostname.caddy" "$site_file"
 	else
@@ -136,7 +152,9 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 site_tmp=$(mktemp "$sites_dir/.add-caddy-host.XXXXXX")
-env_tmp=$(mktemp "$(dirname "$ddns_env")/.add-caddy-host.XXXXXX")
+if [ "$update_dns" = true ]; then
+	env_tmp=$(mktemp "$(dirname "$ddns_env")/.add-caddy-host.XXXXXX")
+fi
 
 {
 	printf '%s {\n' "$hostname"
@@ -165,57 +183,57 @@ else
 fi
 transaction_active=true
 
-# Source the root-owned file to obtain the current alias list without printing
-# the API token. The hostname validation above makes the new value safe.
-# shellcheck disable=SC1090
-. "$ddns_env"
-: "${CF_ALIASES:=}"
-new_aliases=
-alias_found=false
-for alias_name in $CF_ALIASES; do
-	[ "$alias_name" = "$hostname" ] && alias_found=true
-	case " $new_aliases " in
-		*" $alias_name "*) ;;
-		*)
-			if [ -n "$new_aliases" ]; then
-				new_aliases="$new_aliases $alias_name"
-			else
-				new_aliases=$alias_name
-			fi
-			;;
-	esac
-done
-if [ "$alias_found" = false ]; then
-	if [ -n "$new_aliases" ]; then
-		new_aliases="$new_aliases $hostname"
-	else
-		new_aliases=$hostname
+if [ "$update_dns" = true ]; then
+	# Source the root-owned file without printing the API token.
+	# shellcheck disable=SC1090
+	. "$ddns_env"
+	: "${CF_ALIASES:=}"
+	new_aliases=
+	alias_found=false
+	for alias_name in $CF_ALIASES; do
+		[ "$alias_name" = "$hostname" ] && alias_found=true
+		case " $new_aliases " in
+			*" $alias_name "*) ;;
+			*)
+				if [ -n "$new_aliases" ]; then
+					new_aliases="$new_aliases $alias_name"
+				else
+					new_aliases=$alias_name
+				fi
+				;;
+		esac
+	done
+	if [ "$alias_found" = false ]; then
+		if [ -n "$new_aliases" ]; then
+			new_aliases="$new_aliases $hostname"
+		else
+			new_aliases=$hostname
+		fi
 	fi
-fi
-
-awk -v aliases="$new_aliases" '
-	BEGIN { found = 0 }
-	/^CF_ALIASES=/ {
-		printf "CF_ALIASES=%c%s%c\n", 39, aliases, 39
-		found = 1
-		next
-	}
-	{ print }
-	END {
-		if (!found)
+	awk -v aliases="$new_aliases" '
+		BEGIN { found = 0 }
+		/^CF_ALIASES=/ {
 			printf "CF_ALIASES=%c%s%c\n", 39, aliases, 39
-	}
-' "$ddns_env" >"$env_tmp"
-chown root:root "$env_tmp"
-chmod 0600 "$env_tmp"
-mv -f -- "$env_tmp" "$ddns_env"
+			found = 1
+			next
+		}
+		{ print }
+		END {
+			if (!found)
+				printf "CF_ALIASES=%c%s%c\n", 39, aliases, 39
+		}
+	' "$ddns_env" >"$env_tmp"
+	chown root:root "$env_tmp"
+	chmod 0600 "$env_tmp"
+	mv -f -- "$env_tmp" "$ddns_env"
+fi
 
 if ! caddy validate --config "$caddyfile"; then
 	rollback
 	fail "Caddy validation failed"
 fi
 
-if ! "$ddns_command"; then
+if [ "$update_dns" = true ] && ! "$ddns_command"; then
 	rollback
 	fail "Cloudflare DNS update failed"
 fi

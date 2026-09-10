@@ -105,18 +105,14 @@ Options:
 
 ## Caddy host manager
 
-[`scripts/add-caddy-host`](scripts/add-caddy-host) adds a `hatbat.net`
-reverse-proxy hostname to a gateway that already has Caddy and the Cloudflare
-DDNS service installed. It is intentionally not run by `setup.sh`, because it
-is specific to the gateway LXC.
+[`scripts/add-caddy-host`](scripts/add-caddy-host) adds a reverse-proxy
+hostname to a gateway that already has Caddy installed. It is intentionally
+not run by `setup.sh`, because it is specific to the gateway LXC.
 
 The gateway must provide:
 
 - `/etc/caddy/Caddyfile`, containing
   `import /etc/caddy/sites-enabled/*.caddy`;
-- `/etc/cloudflare-ddns/cloudflare-ddns.env`, with `CF_ALIASES` and the
-  root-only Cloudflare credentials;
-- `/usr/local/sbin/cloudflare-ddns`;
 - working Caddy and systemd services.
 
 The normal remote workflow installs the command and then invokes the installed
@@ -137,6 +133,9 @@ The `--payload-file` option makes the installer use the inspected local copy
 instead of downloading the payload again. The `--` separates installer options
 from arguments passed to `add-caddy-host`.
 
+Cloudflare DDNS files are required only when using the optional
+`--update-dns` mode.
+
 For the usual install-and-run path, stream only the installer. It downloads
 and installs `/usr/local/sbin/add-caddy-host` before invoking it:
 
@@ -144,6 +143,13 @@ and installs `/usr/local/sbin/add-caddy-host` before invoking it:
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
   https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/install-caddy-host \
   | sudo sh -s -- app.hatbat.net http://192.168.68.20:8080
+```
+
+By default, DNS is not changed; the hostname must already resolve to the
+gateway. To also update the configured Cloudflare DDNS aliases, opt in:
+
+```sh
+sudo add-caddy-host --update-dns app.hatbat.net http://192.168.68.20:8080
 ```
 
 For an HTTPS upstream with a self-signed or otherwise untrusted certificate,
@@ -166,14 +172,14 @@ curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
   | sudo sh -s -- app.hatbat.net http://192.168.68.20:8080
 ```
 
-The command accepts only lowercase `hatbat.net` subdomains and RFC1918 IPv4
-upstreams with explicit ports. It probes the upstream, serializes operations
-with `flock`, creates root-only backups in `/var/backups/caddy-hosts`, writes a
-dedicated file under `/etc/caddy/sites-enabled`, adds the hostname to
-`CF_ALIASES`, updates Cloudflare DNS, validates and reloads Caddy, and performs
-a local HTTPS check. Configuration changes are rolled back if validation, DNS
-update, or reload fails. Use `--force` only to replace an existing host file
-after inspecting it.
+The command accepts lowercase DNS names and RFC1918 IPv4 upstreams with
+explicit ports. It probes the upstream, serializes operations with `flock`,
+creates root-only backups in `/var/backups/caddy-hosts`, writes a dedicated
+file under `/etc/caddy/sites-enabled`, validates and reloads Caddy, and
+performs a local HTTPS check. With `--update-dns`, it additionally updates
+`CF_ALIASES` and Cloudflare DNS. Configuration changes are rolled back if
+validation, an enabled DNS update, or reload fails. Use `--force` only to
+replace an existing host file after inspecting it.
 
 ## Proxmox LXC firewall (initial test release)
 
