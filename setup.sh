@@ -14,6 +14,7 @@ GITHUB_USER=rogernolan
 SSH_PUBLIC_KEY_FILE=
 DRY_RUN=0
 SUDOERS_TMP=
+NOPASSWD_TMP=
 GUIDANCE_TMP=
 TERMINFO_TMP=
 PAYLOAD_URL=${SETUP_PAYLOAD_URL:-https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/files/rog/AGENTS.md}
@@ -70,6 +71,9 @@ run_env() {
 cleanup() {
     if [[ -n "$SUDOERS_TMP" && -e "$SUDOERS_TMP" ]]; then
         rm -f -- "$SUDOERS_TMP"
+    fi
+    if [[ -n "$NOPASSWD_TMP" && -e "$NOPASSWD_TMP" ]]; then
+        rm -f -- "$NOPASSWD_TMP"
     fi
     if [[ -n "$GUIDANCE_TMP" && -e "$GUIDANCE_TMP" ]]; then
         rm -f -- "$GUIDANCE_TMP"
@@ -219,6 +223,18 @@ install_codex() {
     codex --version >/dev/null || die 'Codex command failed its version check'
 }
 
+install_opencode() {
+    if command -v opencode >/dev/null 2>&1; then
+        log 'OpenCode CLI already installed'
+        return
+    fi
+    log 'installing OpenCode CLI from npm'
+    run npm install --global opencode-ai
+    ((DRY_RUN)) && return
+    command -v opencode >/dev/null 2>&1 || die 'OpenCode installation completed without a usable opencode command'
+    opencode --version >/dev/null || die 'OpenCode command failed its version check'
+}
+
 user_exists() {
     grep -q '^rog:' "$(root_path /etc/passwd)"
 }
@@ -262,6 +278,24 @@ configure_sudo() {
     printf 'rog ALL=(ALL:ALL) ALL\n' > "$SUDOERS_TMP"
     visudo -cf "$SUDOERS_TMP" >/dev/null || die 'generated sudoers policy failed visudo validation'
     install -m 0440 "$SUDOERS_TMP" "$sudoers_file"
+    chown root:root "$sudoers_file"
+}
+
+install_sudo_nopasswd() {
+    local sudoers_dir sudoers_file
+    sudoers_dir=$(root_path /etc/sudoers.d)
+    sudoers_file="$sudoers_dir/rog-nopasswd"
+    run mkdir -p "$sudoers_dir"
+    if ((DRY_RUN)); then
+        log "would install $sudoers_file"
+        return
+    fi
+    NOPASSWD_TMP=$(mktemp "$(root_path /tmp)/tob-lxc-setup.nopasswd.XXXXXX")
+    cat > "$NOPASSWD_TMP" <<'EOF'
+rog ALL=(ALL:ALL) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl status *, /usr/bin/journalctl, /usr/bin/pvesh get *, /usr/sbin/pct list, /usr/sbin/qm list
+EOF
+    visudo -cf "$NOPASSWD_TMP" >/dev/null || die 'generated passwordless sudoers policy failed visudo validation'
+    install -m 0440 "$NOPASSWD_TMP" "$sudoers_file"
     chown root:root "$sudoers_file"
 }
 
@@ -393,8 +427,10 @@ main() {
     install_ghostty_terminfo
     configure_locale
     install_codex
+    install_opencode
     configure_user
     configure_sudo
+    install_sudo_nopasswd
     if ((DRY_RUN)); then
         log 'would install SSH keys for rog'
         configure_ssh_authentication
