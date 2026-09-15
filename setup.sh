@@ -147,6 +147,7 @@ install_packages() {
         locales
         openssh-client
         openssh-server
+        mosh
         ripgrep
         sudo
         tmux
