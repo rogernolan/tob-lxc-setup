@@ -17,7 +17,7 @@ Unsupported distributions fail before package or configuration changes are made.
 
 The apt packages are:
 
-`ca-certificates`, `curl`, `git`, `jq`, `locales`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, `ncurses-bin`, and `avahi-daemon`.
+`ca-certificates`, `curl`, `git`, `jq`, `locales`, `mosh`, `npm`, `openssh-client`, `openssh-server`, `ripgrep`, `sudo`, `tmux`, `ncurses-bin`, and `avahi-daemon`.
 
 If `npm` is not already available, the package manager installs it separately; its package dependencies provide a compatible Node.js runtime.
 
@@ -43,6 +43,22 @@ The `rog` account can run a small set of sysadmin commands with `sudo` without a
 The rules live in `/etc/sudoers.d/rog-nopasswd`, validated with `visudo` and installed with mode `0440`, so every other command still requires `rog`'s password through the base `ALL` rule. `systemctl` is whitelisted per subcommand, never as bare `systemctl`. The Proxmox tools (`pvesh`, `pct`, `qm`) are host commands; on guests where they are absent the corresponding rules simply never match.
 
 Ghostty's `xterm-ghostty` definition is compiled with `tic -x` into `/usr/share/terminfo`, making it available to all users and commands run through `sudo`.
+
+## Mosh
+
+`mosh` is installed for roaming-friendly remote terminals. The client opens an
+SSH session to start the session and then keeps the terminal alive over UDP;
+the server binary is launched on demand through SSH, so no extra service is
+configured. Connect from a machine with the mosh client installed:
+
+```sh
+mosh rog@tob-dev.local
+```
+
+The restrictive firewall profiles (`ssh-only`, `application`, `lan-smb`,
+`development`) open UDP `60000:61000` — mosh's default port range — from the
+same LAN subnets that SSH uses (`192.168.68.0/22` and
+`fdbc:54c7:7b7e:4bdd::/64`). `unrestricted` changes nothing.
 
 ## Quick start
 
@@ -243,7 +259,10 @@ Application allowances accept single ports or inclusive ranges, for example
 applications are supported. Ports must be 1–65535 and ranges ascending. Exact
 normalized duplicates are removed; overlapping ranges remain separate rules.
 TCP and UDP allowances use the same selected source scope. SSH and the baseline
-LAN mDNS allowance remain independently permitted.
+LAN mDNS allowance remain independently permitted. The restrictive profiles also
+allow mosh's default UDP range `60000:61000` from the same source subnets as
+SSH, so a fresh `.local` mosh session reaches the guest over IPv6 or IPv4
+without extra firewall ports.
 
 For `application` and `lan-smb`, `--service-source gateway` restricts service
 ports to `192.168.68.71`, retaining SSH from both LAN subnets. `development`
