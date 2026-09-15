@@ -216,7 +216,7 @@ Install on the Proxmox host using a pinned commit. The one-shot command below
 installs the complete bundle; it does **not** change any guest firewall:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/a89c8323c068a933362989fe2920d39dc110c0e6/scripts/install-lxc-firewall | sudo bash -s -- --ref a89c8323c068a933362989fe2920d39dc110c0e6
+curl -fsSL https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/5521fa47d87337d413c88eabd6d07b9a2fd5fb52/scripts/install-lxc-firewall | sudo bash -s -- --ref 5521fa47d87337d413c88eabd6d07b9a2fd5fb52
 ```
 
 For installation followed by a preview, append `-- 105 ssh-only --dry-run`.
@@ -247,9 +247,9 @@ installed command usable. The installer does not alter Proxmox firewall services
 | `development` | All TCP from gateway 192.168.68.71; TCP 22 and mosh UDP 60000–61000 from both LAN subnets |
 | `unrestricted` | Guest enforcement disabled; no inbound isolation |
 
-The restrictive profiles also always allow SSH (TCP 22), mosh (UDP 60000–61000),
-and LAN mDNS (UDP 5353) from the two trusted subnets; the table lists only the
-profile-specific additions.
+The restrictive profiles also always allow SSH (TCP 22) and mosh (UDP
+60000–61000) from the two trusted subnets, and LAN mDNS (UDP 5353) from
+`192.168.68.0/22`; the table lists only the profile-specific additions.
 
 LAN clients and Tailscale connections SNATed through `192.168.68.71` share
 this access tier. Applications may also be published through Caddy on that
