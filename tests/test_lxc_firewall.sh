@@ -50,6 +50,8 @@ contains 'NIC: net1'
 contains 'Current NIC firewall: 0'
 contains 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22'
 contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 22'
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 60000:61000'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 60000:61000'
 contains 'not natively validated'
 contains 'dhcp: 1'
 contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 5353'
@@ -75,6 +77,8 @@ run 105 application --udp-port 22 --udp-port 1-65535 --service-source gateway --
 contains 'IN ACCEPT -source 192.168.68.71 -p udp -dport 22'
 contains 'IN ACCEPT -source 192.168.68.71 -p udp -dport 1:65535'
 if grep -Eq 'source (192.168.68.0/22|fdbc:).*udp.*dport (22|1:65535)$' "$FIXTURE/out"; then fail 'gateway UDP leaked to LAN'; fi
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 60000:61000'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 60000:61000'
 for port in 0 65536 90-80 80- 80:90 1-2-3 abc; do
   reject 'port' 105 application --udp-port "$port" --dry-run
 done
@@ -85,14 +89,20 @@ done
 run 105 lan-smb --dry-run
 contains '-dport 445'
 contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 445'
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 60000:61000'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 60000:61000'
 if grep -Eq -- '-dport (137|138|139)|fe80::|SMB\(' "$FIXTURE/out"; then fail 'overbroad SMB policy'; fi
 run 105 lan-smb --service-source gateway --dry-run
 contains 'IN ACCEPT -source 192.168.68.71 -p tcp -dport 445'
 contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 22'
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 60000:61000'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 60000:61000'
 if grep -Eq 'source (192.168.68.0/22|fdbc:).*dport 445' "$FIXTURE/out"; then fail 'gateway-only SMB leaked to LAN'; fi
 run 105 development --dry-run
 contains 'IN ACCEPT -source 192.168.68.71 -p tcp'
 contains 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22'
+contains 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 60000:61000'
+contains 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 60000:61000'
 reject 'gateway' 105 development --service-source lan --dry-run
 reject 'service-source' 105 application --port 80 --service-source internet --dry-run
 reject 'service-source' 105 ssh-only --service-source gateway --dry-run
@@ -100,6 +110,7 @@ run 105 unrestricted --dry-run
 contains 'enable: 0'
 contains 'no inbound isolation'
 contains 'NIC action: unchanged'
+if grep -Eq 'udp.*dport 60000:61000' "$FIXTURE/out"; then fail 'unrestricted leaked mosh rules'; fi
 printf 'net2: name=eth1,bridge=vmbr0\n' >> "$GUEST_FIXTURE"
 reject 'exactly one' 105 ssh-only --dry-run
 reset_guest

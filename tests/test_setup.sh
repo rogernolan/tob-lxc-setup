@@ -243,6 +243,7 @@ test_setup_is_idempotent() {
     assert_contains 'apt-get update' "$FIXTURE/calls"
     assert_contains 'apt-get install -y --no-install-recommends ca-certificates curl git jq locales openssh-client' "$FIXTURE/calls"
     assert_contains 'ncurses-bin' "$FIXTURE/calls"
+    assert_contains 'mosh' "$FIXTURE/calls"
     assert_not_contains 'apt-get install -y --no-install-recommends ca-certificates curl git jq locales nodejs' "$FIXTURE/calls"
     assert_contains 'locale-gen en_GB.UTF-8' "$FIXTURE/calls"
     assert_contains 'en_GB.UTF-8 UTF-8' "$ROOT/etc/locale.gen"
