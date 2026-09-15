@@ -241,11 +241,15 @@ installed command usable. The installer does not alter Proxmox firewall services
 
 | Profile | Allowed service ports from either trusted LAN subnet |
 | --- | --- |
-| `ssh-only` | TCP 22 |
-| `application` | TCP 22 plus selected TCP `--port` and UDP `--udp-port` values |
-| `lan-smb` | TCP 22 and direct SMB TCP 445 |
-| `development` | All TCP from gateway 192.168.68.71; TCP 22 from both LAN subnets |
+| `ssh-only` | TCP 22; mosh UDP 60000–61000 |
+| `application` | TCP 22 plus selected TCP `--port` and UDP `--udp-port` values; mosh UDP 60000–61000 |
+| `lan-smb` | TCP 22 and direct SMB TCP 445; mosh UDP 60000–61000 |
+| `development` | All TCP from gateway 192.168.68.71; TCP 22 and mosh UDP 60000–61000 from both LAN subnets |
 | `unrestricted` | Guest enforcement disabled; no inbound isolation |
+
+The restrictive profiles also always allow SSH (TCP 22), mosh (UDP 60000–61000),
+and LAN mDNS (UDP 5353) from the two trusted subnets; the table lists only the
+profile-specific additions.
 
 LAN clients and Tailscale connections SNATed through `192.168.68.71` share
 this access tier. Applications may also be published through Caddy on that
