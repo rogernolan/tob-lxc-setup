@@ -121,6 +121,10 @@ render_ports() {
     fi
   done
 }
+render_mosh() {
+  printf '%s\n' 'IN ACCEPT -source 192.168.68.0/22 -p udp -dport 60000:61000'
+  printf '%s\n' 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p udp -dport 60000:61000'
+}
 render_policy() {
   printf '%s\n' "$marker" '# Format: 1' "# Profile: $profile" "# Service source: $service_source"
   printf '%s\n' '[OPTIONS]'
@@ -131,6 +135,7 @@ render_policy() {
   printf '%s\n' 'enable: 1' 'policy_in: DROP' 'policy_out: ACCEPT' 'dhcp: 1' '[RULES]'
   printf '%s\n' 'IN ACCEPT -source 192.168.68.0/22 -p tcp -dport 22'
   printf '%s\n' 'IN ACCEPT -source fdbc:54c7:7b7e:4bdd::/64 -p tcp -dport 22'
+  render_mosh
   if [[ $profile = development ]]; then
     printf '%s\n' 'IN ACCEPT -source 192.168.68.71 -p tcp'
   elif [[ $profile = application ]]; then
