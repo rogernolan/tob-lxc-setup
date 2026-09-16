@@ -304,10 +304,6 @@ install_rog_terminfo_alias() {
     local terminfo_dir entry tmp
     terminfo_dir=$(root_path /home/rog/.terminfo)
     entry="$terminfo_dir/x/xterm-ghostty"
-    if [[ -e "$entry" ]]; then
-        log 'rog-local xterm-ghostty terminfo already installed'
-        return
-    fi
     if ((DRY_RUN)); then
         log 'would install rog-local xterm-ghostty terminfo alias'
         return
