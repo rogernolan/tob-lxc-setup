@@ -44,6 +44,8 @@ The rules live in `/etc/sudoers.d/rog-nopasswd`, validated with `visudo` and ins
 
 Ghostty's `xterm-ghostty` definition is compiled with `tic -x` into `/usr/share/terminfo`, making it available to all users and commands run through `sudo`.
 
+The setup also installs a `rog`-user-local `xterm-ghostty` alias in `/home/rog/.terminfo/x/xterm-ghostty` (built from the system `ghostty` entry, owned by `rog`), so `TERM=xterm-ghostty` resolves for `rog` even where the system-wide entry is unavailable and `tmux` can start. Reversal: `rm -f /home/rog/.terminfo/x/xterm-ghostty`.
+
 ## Mosh
 
 `mosh` is installed for roaming-friendly remote terminals. The client opens an
@@ -117,6 +119,7 @@ Options:
 - Package upgrades can restart services or change system behavior. Run the script during a suitable maintenance window.
 - `en_GB.UTF-8` is generated so SSH sessions that request that locale do not produce Bash warnings; existing `LANG` and locale policy are otherwise preserved.
 - Repeat runs are expected and should converge without duplicate users, group membership, SSH keys, or guidance files.
+- The `rog`-local `xterm-ghostty` terminfo alias fixes `tmux` startup for the `rog` user only; other users need their own copy (or the client should send `TERM=ghostty`). The system-wide entry under `/usr/share/terminfo` is untouched.
 - Passwordless sudo is limited to `systemctl start/stop/restart/status`, `journalctl`, `pvesh get`, `pct list`, and `qm list`, in a separate `visudo`-validated `/etc/sudoers.d/rog-nopasswd` file with mode `0440`. All other commands require `rog`'s password via the base `ALL` rule.
 
 ## Caddy host manager

@@ -149,6 +149,26 @@ done
 mkdir -p "$output_dir/x"
 cp "$source_file" "$output_dir/x/xterm-ghostty"
 EOF
+    cat > "$BIN/infocmp" <<'EOF'
+#!/usr/bin/env bash
+printf 'infocmp %s\n' "$*" >> "$TEST_CALLS"
+printf '#\tReconstructed via infocmp\n'
+printf 'ghostty|Ghostty,\n'
+printf '\tam, bce,\n'
+EOF
+    cat > "$BIN/sed" <<'EOF'
+#!/usr/bin/env bash
+printf 'sed %s\n' "$*" >> "$TEST_CALLS"
+replacement=
+for arg in "$@"; do
+    case "$arg" in
+        2c\\*)
+            replacement=${arg#2c\\}
+            ;;
+    esac
+done
+awk -v replacement="$replacement" 'NR == 2 && replacement != "" { print replacement; next } { print }'
+EOF
     cat > "$BIN/chown" <<'EOF'
 #!/usr/bin/env bash
 printf 'chown %s\n' "$*" >> "$TEST_CALLS"
@@ -157,6 +177,11 @@ EOF
 #!/usr/bin/env bash
 printf 'chmod %s\n' "$*" >> "$TEST_CALLS"
 /bin/chmod "$@"
+EOF
+    cat > "$BIN/install" <<'EOF'
+#!/usr/bin/env bash
+printf 'install %s\n' "$*" >> "$TEST_CALLS"
+/usr/bin/install "$@"
 EOF
     cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -206,6 +231,7 @@ test_dry_run_is_non_mutating() {
     TEST_ROOT="$ROOT" TEST_BIN="$BIN" TEST_CALLS="$FIXTURE/calls" PATH="$BIN:$PATH" SETUP_ROOT="$ROOT" SETUP_TEST_MODE=1 SETUP_TEST_PATH="$BIN" "$SETUP_SCRIPT" --dry-run
     assert_file_not_exists "$ROOT/etc/sudoers.d/rog"
     assert_file_not_exists "$ROOT/etc/sudoers.d/rog-nopasswd"
+    assert_file_not_exists "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
     assert_file_not_exists "$ROOT/home/rog/AGENTS.md"
     [[ ! -s "$FIXTURE/calls" ]] || fail 'dry-run executed mutating commands'
     rm -rf "$FIXTURE"
@@ -224,6 +250,11 @@ test_setup_is_idempotent() {
     assert_contains 'rog ALL=(ALL:ALL) ALL' "$ROOT/etc/sudoers.d/rog"
     assert_file_exists "$ROOT/etc/sudoers.d/rog-nopasswd"
     assert_count 1 'rog ALL=(ALL:ALL) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl status *, /usr/bin/journalctl, /usr/bin/pvesh get *, /usr/sbin/pct list, /usr/sbin/qm list' "$ROOT/etc/sudoers.d/rog-nopasswd"
+    assert_file_exists "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
+    assert_contains 'xterm-ghostty|ghostty|Ghostty terminal emulator,' "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
+    assert_count 4 'infocmp -x ghostty' "$FIXTURE/calls"
+    assert_count 2 "tic -x -o $ROOT/tmp/tob-lxc-setup.terminfo-dir." "$FIXTURE/calls"
+    assert_count 2 "install -m 0644 $ROOT/tmp/tob-lxc-setup.terminfo-dir." "$FIXTURE/calls"
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
     assert_contains 'PubkeyAuthentication yes' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
@@ -295,6 +326,20 @@ test_installs_npm_separately_when_missing() {
     rm -rf "$FIXTURE"
 }
 
+test_rog_terminfo_alias_rejects_symlinks() {
+    make_fixture
+    KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
+    mkdir -p "$ROOT/home/rog/.terminfo/x"
+    printf 'PRECIOUS\n' > "$FIXTURE/target"
+    ln -s "$FIXTURE/target" "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
+    if run_setup; then
+        fail 'setup accepted a symlinked rog terminfo entry'
+    fi
+    assert_contains 'refusing to overwrite symlinked' "$FIXTURE/output"
+    assert_contains 'PRECIOUS' "$FIXTURE/target"
+    rm -rf "$FIXTURE"
+}
+
 test_bootstrap_fetches_missing_payload() {
     make_fixture
     KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
@@ -316,5 +361,6 @@ test_existing_user_does_not_require_password
 test_rejects_removed_no_ssh_key_option
 test_empty_key_source_does_not_harden_ssh
 test_installs_npm_separately_when_missing
+test_rog_terminfo_alias_rejects_symlinks
 test_bootstrap_fetches_missing_payload
 printf 'PASS: setup tests\n'
