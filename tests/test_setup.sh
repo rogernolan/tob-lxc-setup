@@ -178,6 +178,11 @@ EOF
 printf 'chmod %s\n' "$*" >> "$TEST_CALLS"
 /bin/chmod "$@"
 EOF
+    cat > "$BIN/install" <<'EOF'
+#!/usr/bin/env bash
+printf 'install %s\n' "$*" >> "$TEST_CALLS"
+/usr/bin/install "$@"
+EOF
     cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 printf 'curl %s\n' "$*" >> "$TEST_CALLS"
@@ -248,7 +253,8 @@ test_setup_is_idempotent() {
     assert_file_exists "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
     assert_contains 'xterm-ghostty|ghostty|Ghostty terminal emulator,' "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
     assert_count 4 'infocmp -x ghostty' "$FIXTURE/calls"
-    assert_count 2 "tic -x -o $ROOT/home/rog/.terminfo" "$FIXTURE/calls"
+    assert_count 2 "tic -x -o $ROOT/tmp/tob-lxc-setup.terminfo-dir." "$FIXTURE/calls"
+    assert_count 2 "install -m 0644 $ROOT/tmp/tob-lxc-setup.terminfo-dir." "$FIXTURE/calls"
     assert_file_exists "$ROOT/home/rog/.ssh/authorized_keys"
     assert_count 1 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test' "$ROOT/home/rog/.ssh/authorized_keys"
     assert_contains 'PubkeyAuthentication yes' "$ROOT/etc/ssh/sshd_config.d/99-tob-lxc-setup.conf"
@@ -320,6 +326,20 @@ test_installs_npm_separately_when_missing() {
     rm -rf "$FIXTURE"
 }
 
+test_rog_terminfo_alias_rejects_symlinks() {
+    make_fixture
+    KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
+    mkdir -p "$ROOT/home/rog/.terminfo/x"
+    printf 'PRECIOUS\n' > "$FIXTURE/target"
+    ln -s "$FIXTURE/target" "$ROOT/home/rog/.terminfo/x/xterm-ghostty"
+    if run_setup; then
+        fail 'setup accepted a symlinked rog terminfo entry'
+    fi
+    assert_contains 'refusing to overwrite symlinked' "$FIXTURE/output"
+    assert_contains 'PRECIOUS' "$FIXTURE/target"
+    rm -rf "$FIXTURE"
+}
+
 test_bootstrap_fetches_missing_payload() {
     make_fixture
     KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA rog@test'
@@ -341,5 +361,6 @@ test_existing_user_does_not_require_password
 test_rejects_removed_no_ssh_key_option
 test_empty_key_source_does_not_harden_ssh
 test_installs_npm_separately_when_missing
+test_rog_terminfo_alias_rejects_symlinks
 test_bootstrap_fetches_missing_payload
 printf 'PASS: setup tests\n'
