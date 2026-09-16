@@ -314,12 +314,12 @@ install_rog_terminfo_alias() {
     fi
     command -v tic >/dev/null 2>&1 || die 'tic is unavailable for the rog terminfo alias'
     command -v infocmp >/dev/null 2>&1 || die 'infocmp is unavailable for the rog terminfo alias'
-    infocmp ghostty >/dev/null 2>&1 || die "the 'ghostty' terminfo entry is missing; install ncurses-term"
+    infocmp -x ghostty >/dev/null 2>&1 || die "the 'ghostty' terminfo entry is missing; install ncurses-term"
     tmp=$(mktemp "$(root_path /tmp)/tob-lxc-setup.terminfo.XXXXXX")
     trap 'rm -f -- "$tmp"; cleanup' RETURN
-    infocmp ghostty | sed '2c\xterm-ghostty|ghostty|Ghostty terminal emulator,' > "$tmp"
+    infocmp -x ghostty | sed '2c\xterm-ghostty|ghostty|Ghostty terminal emulator,' > "$tmp"
     run mkdir -p "$terminfo_dir"
-    run tic -o "$terminfo_dir" "$tmp"
+    run tic -x -o "$terminfo_dir" "$tmp"
     run chown -R rog:rog "$terminfo_dir"
     rm -f -- "$tmp"
     trap - RETURN
