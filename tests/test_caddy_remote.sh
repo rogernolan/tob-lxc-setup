@@ -96,14 +96,15 @@ set -eu
 printf '%s\n' "$@" > "$TEST_ARGS"
 EOF
 	make_test_installer "$installer"
-	TEST_ARGS="$FIXTURE/args" run_installer "$installer" --force \
-		app.hatbat.net http://192.168.68.20:8080
+	TEST_ARGS="$FIXTURE/args" run_installer "$installer" --force --update-dns \
+		app.diffeng.co.uk http://192.168.68.20:8080
 	[[ -x "$DESTINATION" ]] || fail "installed command is not executable"
 	assert_file_contains \
 		'https://raw.githubusercontent.com/rogernolan/tob-lxc-setup/main/scripts/add-caddy-host' \
 		"$FIXTURE/curl.log"
 	assert_file_equals "$FIXTURE/args" '--force
-app.hatbat.net
+--update-dns
+app.diffeng.co.uk
 http://192.168.68.20:8080'
 }
 

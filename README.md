@@ -165,11 +165,17 @@ curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
 ```
 
 By default, DNS is not changed; the hostname must already resolve to the
-gateway. To also update the configured Cloudflare DDNS aliases, opt in:
+gateway. Hostnames may use any domain, including `hatbat.net`, `diffeng.co.uk`,
+and their subdomains. To also update the configured Cloudflare DDNS aliases, opt in:
 
 ```sh
-sudo add-caddy-host --update-dns app.hatbat.net http://192.168.68.20:8080
+sudo add-caddy-host --update-dns app.diffeng.co.uk http://192.168.68.20:8080
 ```
+
+For `--update-dns`, the gateway's `/usr/local/sbin/cloudflare-ddns` command
+must be configured to update the requested domain, and its Cloudflare API
+token must have access to that zone. This repository invokes the gateway's
+existing DDNS command; it does not install or configure it.
 
 For an HTTPS upstream with a self-signed or otherwise untrusted certificate,
 the verification bypass must be requested explicitly:
@@ -347,6 +353,7 @@ bash -n setup.sh tests/test_setup.sh
 sh -n scripts/add-caddy-host scripts/install-caddy-host
 bash tests/test_setup.sh
 bash tests/test_caddy_remote.sh
+bash tests/test_caddy_host.sh
 bash tests/test_lxc_firewall.sh
 bash tests/test_lxc_firewall_install.sh
 perl tests/test_lxc_firewall_target.pl
