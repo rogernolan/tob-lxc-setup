@@ -1,0 +1,4 @@
+interface:
+  display_name: "Homelab Admin"
+  short_description: "Manage Rog’s Proxmox guests and gateway services"
+  default_prompt: "Use $homelab-admin to configure this homelab guest or gateway service with the tools in tob-lxc-setup."
